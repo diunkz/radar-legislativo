@@ -10,7 +10,7 @@ DB_URL = os.getenv("DATABASE_URL")
 
 # ── Groq ──────────────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")  # rápido e gratuito
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # rápido e gratuito
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 EMBEDDING_MODEL = "BAAI/bge-m3"

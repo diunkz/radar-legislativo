@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from config import DB_URL
 
@@ -19,6 +19,14 @@ def get_engine():
     return create_engine(DB_URL, pool_pre_ping=True)
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _tabela_existe(nome: str) -> bool:
+    """Verifica se uma tabela existe no banco sem lançar exceção."""
+    engine = get_engine()
+    return inspect(engine).has_table(nome)
+
+
 # ── Leitura ───────────────────────────────────────────────────────────────────
 
 def carregar_proposicoes(apenas_nao_processadas: bool = True) -> pd.DataFrame:
@@ -27,13 +35,17 @@ def carregar_proposicoes(apenas_nao_processadas: bool = True) -> pd.DataFrame:
 
     Carrega `ementa` e `ementa_detalhada` (quando disponível).
     Se `apenas_nao_processadas=True`, filtra somente as que ainda não têm
-    registro em `proposicoes_ia` (processamento incremental).
+    registro em `proposicoes_ia`. Se a tabela `proposicoes_ia` ainda não
+    existir, retorna todas as proposições (primeira execução).
     """
     engine = get_engine()
 
-    if apenas_nao_processadas:
+    # Na primeira execução proposicoes_ia ainda não existe — traz tudo
+    ia_existe = _tabela_existe("proposicoes_ia")
+
+    if apenas_nao_processadas and ia_existe:
         query = """
-            SELECT p.id, p.ementa, p.ementa_detalhada
+            SELECT p.id, p.ementa, p."ementaDetalhada" AS ementa_detalhada
             FROM   stg_proposicoes_bruto p
             LEFT   JOIN proposicoes_ia ia ON ia.proposicao_id = p.id
             WHERE  ia.proposicao_id IS NULL
@@ -42,13 +54,17 @@ def carregar_proposicoes(apenas_nao_processadas: bool = True) -> pd.DataFrame:
             ORDER  BY p.id
         """
     else:
+        # proposicoes_ia não existe ainda OU reprocessamento total
         query = """
-            SELECT id, ementa, ementa_detalhada
+            SELECT id, ementa, "ementaDetalhada" AS ementa_detalhada
             FROM   stg_proposicoes_bruto
             WHERE  ementa IS NOT NULL
               AND  TRIM(ementa) <> ''
             ORDER  BY id
         """
+
+    if apenas_nao_processadas and not ia_existe:
+        logger.info("Tabela `proposicoes_ia` ainda não existe — carregando todas as proposições.")
 
     df = pd.read_sql(text(query), engine)
     logger.info(f"{len(df)} proposições carregadas para processamento.")
