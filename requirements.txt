@@ -1,0 +1,16 @@
+# ── Banco de dados ────────────────────────────────────────────────────────────
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pandas>=2.0
+
+# ── Embeddings (BAAI/bge-m3) ──────────────────────────────────────────────────
+# FlagEmbedding é a lib oficial da BAAI para os modelos bge
+FlagEmbedding>=1.2
+torch>=2.0          # CPU por padrão; instale a versão CUDA se tiver GPU
+numpy>=1.26
+
+# ── LLM / Resumos ─────────────────────────────────────────────────────────────
+groq>=0.9           # cliente oficial da API Groq
+
+# ── Utilitários ───────────────────────────────────────────────────────────────
+python-dotenv>=1.0  # leitura do .env
