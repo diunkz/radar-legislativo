@@ -7,13 +7,13 @@ Esta pasta contém os scripts SQL e os diagramas usados na modelagem do star sch
 ```text
 data-model/
   ├─ silver/
-  │   ├─ ch01_cria_tabelas_silver.sql  │   
+  │   └─ ch01_cria_tabelas_silver.sql  
   ├─ gold/
-  │   ├─ ch01_cria_tabelas_gold.sql  │   
+  │   └─ ch01_cria_tabelas_gold.sql  
   └─ docs/
       ├─ silver_model.png
-      └─ gold_model.png
-      └─ ch01_coleta_dados_silver.sql
+      ├─ gold_model.png
+      ├─ ch01_coleta_dados_silver.sql
       └─ ch01_coleta_dados_gold.sql
 ```
 
