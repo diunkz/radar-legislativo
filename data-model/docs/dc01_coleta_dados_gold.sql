@@ -1,7 +1,7 @@
 =================> SELECTS UTILIZADOS PARA POPULAR TABELAS GOLD
 
 ------ DIMENSÃO DEPUTADO ------
-SELECT 
+SELECT DISTINCT
     "idDeputado" as "id_deputado",
     nome as "nm_deputado",
     sexo as "sg_sexo",
@@ -20,7 +20,7 @@ SELECT
 ----------------------
 
 ------- DIMENSÃO ORGÃO -------
-SELECT 
+SELECT DISTINCT
     "idOrgao" as "id_orgao",
     "siglaOrgao" as "sg_orgao",
     nome as "nm_orgao",
@@ -31,7 +31,7 @@ SELECT
 -------------------------------
 
 ------- DIMENSÃO EVENTO -------
-SELECT 
+SELECT DISTINCT
     "idEvento" as "id_evento",      
     "descricaoTipo" as "ds_tipo_evento",
     situacao as "ds_situacao",
@@ -40,7 +40,7 @@ SELECT
  ------------------------------
 
 ----- DIMENSÃO PROPOSIÇÃO -----
-SELECT
+SELECT DISTINCT
     "idProposicao" as "id_proposicao",  
     "siglaTipoProposicao" as "sg_tipo_proposicao",
     "descricaoTipoProposicao" as "ds_tipo_proposicao",
@@ -48,8 +48,9 @@ SELECT
     current_timestamp as "dh_ingestao"
   FROM silver.proposicao;
 -------------------------------
+
 ------ DIMENSÃO VOTAÇÃO ------
-SELECT
+SELECT DISTINCT
     "idVotacao" as "id_votacao",
     "descricaoVotacao" as "ds_votacao",
     "resultadoVotacao" as "ds_resultado",
