@@ -14,13 +14,17 @@ O modo é detectado automaticamente pelo main.py via flag `modo_incremental`.
 import logging
 import math
 import time
-from typing import Literal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import requests
 from groq import Groq
 
 from config import GROQ_API_KEY, GROQ_MAX_RPM
+
+# Número de threads paralelas para o Ollama (bulk)
+# RTX 3060 12GB aguenta 3-4 requisições simultâneas no qwen2.5:14b
+OLLAMA_WORKERS = 4
 
 logger = logging.getLogger(__name__)
 
@@ -154,45 +158,87 @@ def gerar_resumos(df: pd.DataFrame, modo_incremental: bool = False) -> pd.DataFr
     cliente_groq = Groq(api_key=GROQ_API_KEY) if modo_incremental else None
     contagem_modelos: dict[str, int] = {}
 
-    for i, (_, row) in enumerate(df.iterrows(), start=1):
-        proposicao_id    = row["id"]
-        ementa           = row["ementa"]
-        ementa_detalhada = row.get("ementa_detalhada") if tem_detalhada else None
-        prompt           = _montar_prompt(ementa, ementa_detalhada)
-        resumo           = None
+    if modo_incremental:
+        # ── Groq: sequencial com rate limit e fallback ────────────────────────
+        for i, (_, row) in enumerate(df.iterrows(), start=1):
+            proposicao_id    = row["id"]
+            ementa           = row["ementa"]
+            ementa_detalhada = row.get("ementa_detalhada") if tem_detalhada else None
+            prompt           = _montar_prompt(ementa, ementa_detalhada)
+            resumo           = None
 
-        try:
-            if modo_incremental:
-                # Groq — com fallback automático
-                if esgotados >= set(GROQ_MODELOS):
-                    logger.warning(
-                        f"Todos os modelos Groq esgotados. "
-                        f"Interrompendo em {i}/{total}. "
-                        f"Retoma amanhã após reset (00:00 UTC)."
-                    )
-                    break
+            if esgotados >= set(GROQ_MODELOS):
+                logger.warning(
+                    f"Todos os modelos Groq esgotados. "
+                    f"Interrompendo em {i}/{total}. "
+                    f"Retoma amanhã após reset (00:00 UTC)."
+                )
+                break
 
+            try:
                 resumo, modelo_usado = _resumir_groq(cliente_groq, prompt, esgotados)
                 contagem_modelos[modelo_usado] = contagem_modelos.get(modelo_usado, 0) + 1
+            except Exception as e:
+                logger.warning(f"[{i}/{total}] Erro na proposição {proposicao_id}: {e}")
+                erros += 1
 
-                if i < total:
-                    time.sleep(_SLEEP_ENTRE_CHAMADAS)
+            ids.append(proposicao_id)
+            resumos.append(resumo)
 
-            else:
-                # Ollama local — sem rate limit, sem sleep
-                resumo = _resumir_ollama(prompt)
-                contagem_modelos[OLLAMA_MODEL] = contagem_modelos.get(OLLAMA_MODEL, 0) + 1
+            if i % 10 == 0 or i == total:
+                status = " | ".join(f"{m}: {c}" for m, c in contagem_modelos.items())
+                logger.info(f"  {i}/{total} | {status} | erros: {erros}")
 
-        except Exception as e:
-            logger.warning(f"[{i}/{total}] Erro na proposição {proposicao_id}: {e}")
-            erros += 1
+            if i < total:
+                time.sleep(_SLEEP_ENTRE_CHAMADAS)
 
-        ids.append(proposicao_id)
-        resumos.append(resumo)
+    else:
+        # ── Ollama: paralelo com ThreadPoolExecutor ───────────────────────────
+        # Monta lista de tarefas com índice para preservar ordem
+        tarefas = [
+            (idx, row["id"], _montar_prompt(
+                row["ementa"],
+                row.get("ementa_detalhada") if tem_detalhada else None
+            ))
+            for idx, (_, row) in enumerate(df.iterrows())
+        ]
 
-        if i % 10 == 0 or i == total:
-            status = " | ".join(f"{m}: {c}" for m, c in contagem_modelos.items())
-            logger.info(f"  {i}/{total} | {status} | erros: {erros}")
+        resultados_parciais = {}  # idx → resumo
+
+        logger.info(f"Processando em paralelo com {OLLAMA_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=OLLAMA_WORKERS) as executor:
+            futures = {
+                executor.submit(_resumir_ollama, prompt): (idx, pid)
+                for idx, pid, prompt in tarefas
+            }
+
+            concluidos = 0
+            for future in as_completed(futures):
+                idx, proposicao_id = futures[future]
+                concluidos += 1
+                try:
+                    resumo = future.result()
+                    contagem_modelos[OLLAMA_MODEL] = contagem_modelos.get(OLLAMA_MODEL, 0) + 1
+                except Exception as e:
+                    logger.warning(f"Erro na proposição {proposicao_id}: {e}")
+                    resumo = None
+                    erros += 1
+
+                resultados_parciais[idx] = (proposicao_id, resumo)
+
+                if concluidos % 10 == 0 or concluidos == total:
+                    logger.info(
+                        f"  {concluidos}/{total} | "
+                        f"{OLLAMA_MODEL}: {contagem_modelos.get(OLLAMA_MODEL, 0)} | "
+                        f"erros: {erros}"
+                    )
+
+        # Reconstrói em ordem original
+        for idx in sorted(resultados_parciais):
+            pid, resumo = resultados_parciais[idx]
+            ids.append(pid)
+            resumos.append(resumo)
 
     resultado = pd.DataFrame({
         "proposicao_id":    ids,

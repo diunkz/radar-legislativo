@@ -14,8 +14,24 @@ logger = logging.getLogger(__name__)
 
 # ── Engine singleton ──────────────────────────────────────────────────────────
 
+_engine = None
+
 def get_engine():
-    return create_engine(DB_URL, pool_pre_ping=True)
+    """
+    Retorna engine singleton com pool robusto para longas execuções.
+    pool_pre_ping: testa a conexão antes de usar (detecta conexões mortas).
+    pool_recycle:  recria conexões após 10min (evita timeout do Supabase).
+    """
+    global _engine
+    if _engine is None:
+        _engine = create_engine(
+            DB_URL,
+            pool_pre_ping=True,
+            pool_recycle=600,       # recicla conexões a cada 10 minutos
+            pool_size=2,
+            max_overflow=2,
+        )
+    return _engine
 
 
 def _tabela_existe(nome: str) -> bool:
@@ -80,42 +96,75 @@ def garantir_tabela_ia():
     logger.info("Tabela `proposicoes_ia` verificada/criada com sucesso.")
 
 
-def salvar_resultados(df: pd.DataFrame):
+def salvar_resultados(df: pd.DataFrame, tentativas: int = 3):
     """
-    Faz upsert em `proposicoes_ia`.
-    A coluna `embedding` deve ser uma lista de floats (será convertida para
-    o formato de string que o pgvector aceita: '[0.1, 0.2, ...]').
+    Faz upsert em `proposicoes_ia` com retry automático em caso de
+    queda de conexão (comum em execuções longas contra o Supabase).
+
+    Monta o SQL dinamicamente com base nas colunas presentes no DataFrame,
+    permitindo salvar apenas embeddings, apenas resumos, ou ambos.
     """
+    import time
+
     if df.empty:
         logger.warning("DataFrame vazio — nada para salvar.")
         return
 
-    engine = get_engine()
+    df = df.copy()
 
     # Converte embedding de lista Python para string pgvector
     if "embedding" in df.columns:
-        df = df.copy()
         df["embedding"] = df["embedding"].apply(
             lambda v: "[" + ",".join(f"{x:.8f}" for x in v) + "]" if v is not None else None
         )
 
-    upsert_sql = """
-        INSERT INTO proposicoes_ia
-            (proposicao_id, tema_classificado, score_similaridade,
-             embedding, resumo_executivo, processado_em)
-        VALUES
-            (:proposicao_id, :tema_classificado, :score_similaridade,
-             CAST(:embedding AS vector), :resumo_executivo, :processado_em)
+    # Colunas opcionais — só incluídas no SQL se existirem no DataFrame
+    COLUNAS_OPCIONAIS = {
+        "tema_classificado":  "tema_classificado  = EXCLUDED.tema_classificado",
+        "score_similaridade": "score_similaridade = EXCLUDED.score_similaridade",
+        "embedding":          "embedding          = EXCLUDED.embedding",
+        "resumo_executivo":   "resumo_executivo   = EXCLUDED.resumo_executivo",
+    }
+
+    colunas_presentes = [c for c in COLUNAS_OPCIONAIS if c in df.columns]
+
+    # Monta os fragmentos do INSERT dinamicamente
+    col_insert  = ["proposicao_id"] + colunas_presentes + ["processado_em"]
+    val_insert  = []
+    for c in col_insert:
+        if c == "embedding":
+            val_insert.append("CAST(:embedding AS vector)")
+        else:
+            val_insert.append(f":{c}")
+
+    update_set = [COLUNAS_OPCIONAIS[c] for c in colunas_presentes]
+    update_set.append("processado_em = EXCLUDED.processado_em")
+
+    upsert_sql = f"""
+        INSERT INTO proposicoes_ia ({", ".join(col_insert)})
+        VALUES ({", ".join(val_insert)})
         ON CONFLICT (proposicao_id) DO UPDATE SET
-            tema_classificado  = EXCLUDED.tema_classificado,
-            score_similaridade = EXCLUDED.score_similaridade,
-            embedding          = EXCLUDED.embedding,
-            resumo_executivo   = EXCLUDED.resumo_executivo,
-            processado_em      = EXCLUDED.processado_em
+            {",\n            ".join(update_set)}
     """
 
     registros = df.to_dict(orient="records")
-    with engine.begin() as conn:
-        conn.execute(text(upsert_sql), registros)
 
-    logger.info(f"{len(df)} registros salvos em `proposicoes_ia`.")
+    for tentativa in range(1, tentativas + 1):
+        try:
+            engine = get_engine()
+            with engine.begin() as conn:
+                conn.execute(text(upsert_sql), registros)
+            logger.info(f"{len(df)} registros salvos em `proposicoes_ia`.")
+            return
+
+        except Exception as e:
+            logger.warning(
+                f"Falha ao salvar (tentativa {tentativa}/{tentativas}): {e}"
+            )
+            if tentativa < tentativas:
+                espera = tentativa * 5   # 5s, 10s, 15s
+                logger.info(f"Aguardando {espera}s antes de tentar novamente...")
+                time.sleep(espera)
+            else:
+                logger.error("Todas as tentativas de salvamento falharam.")
+                raise
