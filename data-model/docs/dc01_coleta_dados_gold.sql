@@ -58,15 +58,17 @@ SELECT DISTINCT
   FROM silver.votacao;
 ---------------------
 
- ----- FATO PROPOSIÇÃO -----
+----- FATO PROPOSIÇÃO -----
 SELECT
     dep."sk_deputado",
     org."sk_orgao",
     prp."sk_proposicao",
-    CAST(TO_CHAR(prop."dataApresentacao", 'YYYYMMDD') as int) as "sk_data_proposicao", 
+    CAST(TO_CHAR(prop."dataApresentacao", 'YYYYMMDD') as int) as "sk_data_proposicao",
+    ia.score_similaridade as "nr_classificacao", -- coluna da IA
     1 as "qtd_proposicao",
     current_timestamp as "dh_ingestao"
   FROM silver.proposicao prop
+  LEFT JOIN silver.proposicoes_ia ia ON prop."idProposicao" = ia.proposicao_id
  INNER JOIN gold.dim_proposicao prp ON prop."idProposicao" = prp."id_proposicao"
  INNER JOIN gold.dim_deputado dep ON prop."idDeputado" = dep."id_deputado"
  INNER JOIN gold.dim_orgao org ON prop."idOrgao" = org."id_orgao";
