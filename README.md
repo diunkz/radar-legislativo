@@ -6,7 +6,7 @@ O projeto parte de dados consumidos pela API na etapa de extração, transforma 
 
 ---
 
-## Visão geral do fluxo
+## Visão geral do fluxo.
 
 ```text
 API / Staging
