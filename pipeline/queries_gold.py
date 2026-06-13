@@ -48,7 +48,7 @@ QUERIES_GOLD: dict[str, str] = {
             "dt_fim_legislatura",
             "dh_ingestao"
         )
-        SELECT
+        SELECT DISTINCT
             "idDeputado"             AS "id_deputado",
             nome                     AS "nm_deputado",
             sexo                     AS "sg_sexo",
@@ -78,7 +78,7 @@ QUERIES_GOLD: dict[str, str] = {
             "ds_tipo_orgao",
             "dh_ingestao"
         )
-        SELECT
+        SELECT DISTINCT
             "idOrgao"       AS "id_orgao",
             siglaorgao      AS "sg_orgao",
             nome            AS "nm_orgao",
@@ -98,7 +98,7 @@ QUERIES_GOLD: dict[str, str] = {
             "ds_situacao",
             "dh_ingestao"
         )
-        SELECT
+        SELECT DISTINCT
             "idEvento"          AS "id_evento",
             "descricaoTipo"     AS "ds_tipo_evento",
             situacao            AS "ds_situacao",
@@ -117,7 +117,7 @@ QUERIES_GOLD: dict[str, str] = {
             "ds_situacao",
             "dh_ingestao"
         )
-        SELECT
+        SELECT DISTINCT
             "idProposicao"              AS "id_proposicao",
             "siglaTipoProposicao"       AS "sg_tipo_proposicao",
             "descricaoTipoProposicao"   AS "ds_tipo_proposicao",
@@ -136,8 +136,8 @@ QUERIES_GOLD: dict[str, str] = {
             "ds_resultado",
             "dh_ingestao"
         )
-        SELECT
-            CAST("idVotacao" AS BIGINT) AS "id_votacao",
+        SELECT DISTINCT
+            "idVotacao"                 AS "id_votacao",
             "descricaoVotacao"          AS "ds_votacao",
             "resultadoVotacao"          AS "ds_resultado",
             current_timestamp           AS "dh_ingestao"
@@ -151,38 +151,42 @@ QUERIES_GOLD: dict[str, str] = {
     # -----------------------------------------------------------------
     # gold.ft_proposicao
     # -----------------------------------------------------------------
-    # "ft_proposicao": """
-    #     INSERT INTO gold.ft_proposicao (
-    #         "sk_deputado",
-    #         "sk_orgao",
-    #         "sk_proposicao",
-    #         "sk_data_proposicao",
-    #         "qtd_proposicao",
-    #         "dh_ingestao"
-    #     )
-    #     SELECT DISTINCT
-    #         dep."sk_deputado",
-    #         org."sk_orgao",
-    #         prp."sk_proposicao",
-    #         CAST(TO_CHAR(prop."dataApresentacao", 'YYYYMMDD') AS int) AS "sk_data_proposicao",
-    #         1 AS "qtd_proposicao",
-    #         current_timestamp AS "dh_ingestao"
-    #     FROM silver.proposicao prop
-    #     INNER JOIN gold.dim_proposicao prp
-    #             ON prop."idProposicao" = prp."id_proposicao"
-    #     INNER JOIN gold.dim_deputado dep
-    #             ON prop."idDeputado" = dep."id_deputado"
-    #     INNER JOIN gold.dim_orgao org
-    #             ON prop."idOrgao" = org."id_orgao";
-    # """,
+    "ft_proposicao": """
+        INSERT INTO gold.ft_proposicao (
+            "sk_deputado",
+            "sk_orgao",
+            "sk_proposicao",
+            "sk_data_proposicao",
+            "qtd_proposicao",
+            "dh_ingestao"
+        )
+        SELECT
+            dep."sk_deputado",
+            org."sk_orgao",
+            prp."sk_proposicao",
+            CAST(TO_CHAR(prop."dataApresentacao", 'YYYYMMDD') AS int) AS "sk_data_proposicao",
+            1 AS "qtd_proposicao",
+            current_timestamp AS "dh_ingestao"
+        FROM silver.proposicao prop
+        INNER JOIN gold.dim_proposicao prp
+                ON prop."idProposicao" = prp."id_proposicao"
+        INNER JOIN gold.dim_deputado dep
+                ON prop."idDeputado" = dep."id_deputado"
+        INNER JOIN gold.dim_orgao org
+                ON prop."idOrgao" = org."id_orgao"
+        LIMIT 100000;
+    """,
 
     # -----------------------------------------------------------------
     # gold.ft_despesa
     # -----------------------------------------------------------------
+
+    #
     "ft_despesa": """
         INSERT INTO gold.ft_despesa (
             "sk_deputado",
             "sk_data_despesa",
+            "sk_cod_despesa",
             "tp_despesa",
             "vl_bruto",
             "vl_liquido",
@@ -192,54 +196,57 @@ QUERIES_GOLD: dict[str, str] = {
         )
         SELECT
             dep."sk_deputado",
-            CAST(TO_CHAR(dsp."dataDespesa", 'YYYYMMDD') AS int) AS "sk_data_despesa",
-            dsp."tipoDespesa" AS "tp_despesa",
-            dsp."valorBruto" AS "vl_bruto",
-            dsp."valorLiquido" AS "vl_liquido",
-            dsp."valorGlosa" AS "vl_glosa",
-            dsp.parcela AS "nr_parcela",
-            current_timestamp AS "dh_ingestao"
+            CAST(TO_CHAR(dsp."dataDespesa", 'YYYYMMDD') AS int)     AS "sk_data_despesa",
+            dsp."codDespesa"                                        AS "sk_cod_despesa",
+            dsp."tipoDespesa"                                       AS "tp_despesa",
+            dsp."valorBruto"                                        AS "vl_bruto",
+            dsp."valorLiquido"                                      AS "vl_liquido",
+            dsp."valorGlosa"                                        AS "vl_glosa",
+            dsp.parcela                                             AS "nr_parcela",
+            current_timestamp                                       AS "dh_ingestao"
         FROM silver.despesa dsp
-        INNER JOIN gold.dim_deputado dep
-                ON dsp."idDeputado" = dep."id_deputado";
+            INNER JOIN gold.dim_deputado dep
+                ON dsp."idDeputado" = dep."id_deputado"
+        LIMIT 100000;
     """,
 
     # -----------------------------------------------------------------
     # gold.ft_voto
     # -----------------------------------------------------------------
-    # "ft_voto": """
-    #     INSERT INTO gold.ft_voto (
-    #         "sk_votacao",
-    #         "sk_deputado",
-    #         "sk_orgao",
-    #         "sk_evento",
-    #         "sk_data_voto",
-    #         "sk_proposicao",
-    #         "tp_voto",
-    #         "qtd_voto",
-    #         "dh_ingestao"
-    #     )
-    #     SELECT
-    #         COALESCE(vot."sk_votacao",-1)                       AS "sk_votacao",
-    #         COALESCE(dep."sk_deputado",-1)                      AS "sk_deputado",
-    #         COALESCE(org."sk_orgao",-1)                         AS "sk_orgao",
-    #         COALESCE(eve."sk_evento",-1)                        AS "sk_evento",
-    #         CAST(TO_CHAR(vtc."dataVoto", 'YYYYMMDD') AS int)    AS "sk_data_voto",
-    #         COALESCE(prp."sk_proposicao",-1)                    AS "sk_proposicao",
-    #         COALESCE(vtc."tipoVoto", 'NAO INFORMADO')           AS "tp_voto",
-    #         1                                                   AS "qtd_voto",
-    #         current_timestamp                                   AS "dh_ingestao"
-    #     FROM silver.votacao vtc
-    #     INNER JOIN gold.dim_votacao vot
-    #             ON vtc."idVotacao" = vot."id_votacao"
-    #     INNER JOIN gold.dim_deputado dep
-    #             ON vtc."idDeputado" = dep."id_deputado"
-    #     INNER JOIN gold.dim_orgao org
-    #             ON vtc."idOrgao" = org."id_orgao"
-    #     LEFT JOIN gold.dim_evento eve
-    #             ON vtc."idEvento" = eve."id_evento"
-    #     INNER JOIN gold.dim_proposicao prp
-    #             ON vtc."idProposicao" = prp."id_proposicao";
-    # """,
+    "ft_voto": """
+        INSERT INTO gold.ft_voto (
+            "sk_votacao",
+            "sk_deputado",
+            "sk_orgao",
+            "sk_evento",
+            "sk_data_voto",
+            "sk_proposicao",
+            "tp_voto",
+            "qtd_voto",
+            "dh_ingestao"
+        )
+        SELECT
+            COALESCE(vot."sk_votacao",-1)                       AS "sk_votacao",
+            COALESCE(dep."sk_deputado",-1)                      AS "sk_deputado",
+            COALESCE(org."sk_orgao",-1)                         AS "sk_orgao",
+            COALESCE(eve."sk_evento",-1)                        AS "sk_evento",
+            CAST(TO_CHAR(vtc."dataVoto", 'YYYYMMDD') AS int)    AS "sk_data_voto",
+            COALESCE(prp."sk_proposicao",-1)                    AS "sk_proposicao",
+            COALESCE(vtc."tipoVoto", 'NAO INFORMADO')           AS "tp_voto",
+            1                                                   AS "qtd_voto",
+            current_timestamp                                   AS "dh_ingestao"
+        FROM silver.votacao vtc
+        INNER JOIN gold.dim_votacao vot
+                ON vtc."idVotacao" = vot."id_votacao"
+        INNER JOIN gold.dim_deputado dep
+                ON vtc."idDeputado" = dep."id_deputado"
+        INNER JOIN gold.dim_orgao org
+                ON vtc."idOrgao" = org."id_orgao"
+        LEFT JOIN gold.dim_evento eve
+                ON vtc."idEvento" = eve."id_evento"
+        INNER JOIN gold.dim_proposicao prp
+                ON vtc."idProposicao" = prp."id_proposicao"
+        LIMIT 100000;
+    """,
 
 }

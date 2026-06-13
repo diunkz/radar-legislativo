@@ -13,16 +13,6 @@ from logger import log
 # 2. LEITURA DAS TABELAS → DataFrame
 # ===========================================================================
 
-# def carregar_tabela(client: Client, tabela: str) -> pd.DataFrame:
-#     """Lê todos os dados de uma tabela via supabase-py e retorna um DataFrame."""
-#     try:
-#         resposta = client.table(tabela).select("*").execute()
-#         df = pd.DataFrame(resposta.data)
-#         log.info("  📥 '%s': %d linhas, %d colunas", tabela, len(df), len(df.columns))
-#         return df
-#     except Exception as exc:
-#         log.warning("  ⚠  Não foi possível carregar '%s': %s", tabela, exc)
-#         return pd.DataFrame()
 
 def carregar_tabela(engine: Engine, tabela: str) -> pd.DataFrame:
     """Lê todos os dados de uma tabela via SQLAlchemy e retorna um DataFrame."""

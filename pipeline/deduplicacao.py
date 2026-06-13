@@ -23,8 +23,8 @@ CHAVES_POR_TABELA: dict[str, list[str] | None] = {
     "stg_orgaos_bruto"          : ["id"],
     "stg_partidos_bruto"        : ["id"],
     "stg_proposicoes_bruto"     : ["id"],
+    "stg_despesas_bruto"        : ["codDocumento"],
     "stg_votacoes_bruto"        : ["id"],
-    #"stg_votos_bruto"           : ["idVotacaoContexto"]
 
     # tabelas sem regra explícita usarão None (todas as colunas)
 }
@@ -35,21 +35,7 @@ CHAVES_POR_TABELA: dict[str, list[str] | None] = {
 #     Remove linhas duplicadas com base no subset de colunas-chave da tabela.
 #     Loga quantas linhas foram descartadas.
 #     """
-#     subset = CHAVES_POR_TABELA.get(tabela)  # None se não mapeado
-#     antes  = len(df)
-
-#     df = df.drop_duplicates(subset=subset, keep="first").reset_index(drop=True)
-
-#     removidas = antes - len(df)
-#     if removidas:
-#         log.warning(
-#             "  [dedup] %d duplicata(s) removida(s) em '%s' (subset=%s).",
-#             removidas, tabela, subset,
-#         )
-#     else:
-#         log.info("  [dedup] Nenhuma duplicata em '%s'.", tabela)
-
-#     return df
+ 
 
 def remover_duplicatas(df: pd.DataFrame, tabela: str) -> pd.DataFrame:
     """

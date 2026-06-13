@@ -10,36 +10,6 @@ import pandas as pd
 from pipeline.conversao_tipos import CONVERSAO_TIPOS
 from logger import log
 
-# # ===========================================================================
-# # 4. CONVERSÃO DE TIPOS
-# # ===========================================================================
-
-# def converter_tipos(df: pd.DataFrame, tabela: str) -> pd.DataFrame:
-#     """
-#     Aplica as conversões definidas em CONVERSAO_TIPOS para a tabela informada.
-#     Colunas ausentes no mapeamento são mantidas com o tipo inferido.
-#     """
-#     mapeamento = CONVERSAO_TIPOS.get(tabela, {})
-#     if not mapeamento:
-#         log.info("  ℹ️  '%s': sem mapeamento de tipos definido.", tabela)
-#         return df
-
-#     df = df.copy()
-#     for coluna, novo_tipo in mapeamento.items():
-#         if coluna not in df.columns:
-#             log.warning("  ⚠  Coluna '%s' não encontrada em '%s' — ignorada.", coluna, tabela)
-#             continue
-#         try:
-#             if novo_tipo == "datetime64[ns]":
-#                 df[coluna] = pd.to_datetime(df[coluna], errors="coerce")
-#             else:
-#                 df[coluna] = df[coluna].astype(novo_tipo)
-#             log.info("  🔄 '%s.%s' → %s", tabela, coluna, novo_tipo)
-#         except Exception as exc:
-#             log.warning("  ⚠  Erro ao converter '%s.%s' para %s: %s", tabela, coluna, novo_tipo, exc)
-
-#     return df
-
 
 # ===========================================================================
 # 4. CONVERSÃO DE TIPOS — funções auxiliares + aplicar_conversoes()

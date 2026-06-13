@@ -92,6 +92,7 @@ CREATES_SILVER: dict[str, str] = {
         CREATE TABLE silver.despesa 
         (
             "idDeputado" int not null,
+            "codDespesa" text not null,
             "tipoDespesa" text not null default 'NÃO INFORMADO',
             "dataDespesa" date not null default '9999-12-31',
             "valorBruto" decimal not null default 0,
