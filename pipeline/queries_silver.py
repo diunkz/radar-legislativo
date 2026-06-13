@@ -368,7 +368,6 @@ QUERIES_SILVER: dict[str, str] = {
     # -----------------------------------------------------------------
     "votacao": """
         INSERT INTO silver.votacao (
-            "cd_chave_voto",
             "idVotacao",
             "idOrgao",
             "idEvento",
@@ -380,28 +379,72 @@ QUERIES_SILVER: dict[str, str] = {
             "resultadoVotacao"
         )
         SELECT DISTINCT
-            (
-                CAST(vt."idVotacaoContexto" AS TEXT) || '_' ||
-                COALESCE(CAST(substring(vc."uriEvento" FROM '[^/]+$') AS TEXT), '-1') || '_' ||
-                COALESCE(CAST(vt."deputado__id" AS TEXT), '-1')
-            ) AS "cd_chave_voto",
+            CASE
+                WHEN vt."idVotacaoContexto"::text ~ '^[0-9]+$'
+                THEN vt."idVotacaoContexto"::bigint
+                ELSE -1
+            END AS "idVotacao",
 
-            CAST(vt."idVotacaoContexto" AS BIGINT) AS "idVotacao",
-            COALESCE(CAST(substring(vc."uriOrgao" FROM '[^/]+$') AS INT), -1) AS "idOrgao",
-            COALESCE(CAST(substring(vc."uriEvento" FROM '[^/]+$') AS INT), -1) AS "idEvento",
-            COALESCE(CAST(vt."deputado__id" AS BIGINT), -1) AS "idDeputado",
-            COALESCE(CAST(substring(vc."uriProposicaoObjeto" FROM '[^/]+$') AS INT), -3) AS "idProposicao",
+            COALESCE(
+                CASE
+                    WHEN substring(vc."uriOrgao"::text FROM '[^/]+$') ~ '^[0-9]+$'
+                    THEN substring(vc."uriOrgao"::text FROM '[^/]+$')::bigint
+                    ELSE NULL
+                END,
+                -1
+            ) AS "idOrgao",
+
+            COALESCE(
+                CASE
+                    WHEN substring(vc."uriEvento"::text FROM '[^/]+$') ~ '^[0-9]+$'
+                    THEN substring(vc."uriEvento"::text FROM '[^/]+$')::bigint
+                    ELSE NULL
+                END,
+                -1
+            ) AS "idEvento",
+
+            COALESCE(
+                vt."deputado_.id"::bigint,
+                -1
+            ) AS "idDeputado",
+
+            COALESCE(
+                CASE
+                    WHEN substring(vc."uriProposicaoObjeto"::text FROM '[^/]+$') ~ '^[0-9]+$'
+                    THEN substring(vc."uriProposicaoObjeto"::text FROM '[^/]+$')::bigint
+                    ELSE NULL
+                END,
+                -3
+            ) AS "idProposicao",
+
             COALESCE(vt."tipoVoto", 'NÃO INFORMADO') AS "tipoVoto",
-            CAST(vt."dataRegistroVoto" AS DATE) AS "dataVoto",
+
+            COALESCE(
+                vt."dataRegistroVoto"::date,
+                DATE '9999-12-31'
+            ) AS "dataVoto",
+
             COALESCE(vc.descricao, 'NÃO INFORMADO') AS "descricaoVotacao",
+
             CASE
                 WHEN vc.aprovacao IS TRUE THEN 'Aprovado'
                 WHEN vc.aprovacao IS FALSE THEN 'Rejeitado'
                 ELSE 'NÃO INFORMADO'
             END AS "resultadoVotacao"
+
         FROM bronze.votos vt
-        INNER JOIN bronze.votacoes vc
-                ON CAST(vt."idVotacaoContexto" AS BIGINT)
-                 = CAST(vc.id AS BIGINT);
-    """,
+
+            INNER JOIN bronze.votacoes vc
+                    ON CASE
+                        WHEN vt."idVotacaoContexto"::text ~ '^[0-9]+$'
+                        THEN vt."idVotacaoContexto"::bigint
+                        ELSE -1
+                    END
+                    =
+                    CASE
+                        WHEN vc.id::text ~ '^[0-9]+$'
+                        THEN vc.id::bigint
+                        ELSE -2
+                    END;
+""",
 }

@@ -1,343 +1,283 @@
-# """
-# pipeline/carga_silver.py
-# --------------------------
-# Responsabilidade única: executar a transformação Bronze -> Silver
-# diretamente no PostgreSQL, via TRUNCATE + INSERT INTO ... SELECT.
-
-# A query (com os JOINs, CASE, COALESCE etc.) vive em
-# pipeline/queries_silver.py — este módulo apenas orquestra a execução.
-
-# Estratégia de carga: TRUNCATE + INSERT (full load).
-#   - TRUNCATE garante idempotência: rodar o pipeline várias vezes não duplica
-#     registros nem deixa "lixo" de cargas anteriores.
-#   - Se no futuro for necessária carga incremental, troque a estratégia aqui
-#     — o restante do pipeline não precisa mudar.
-# """
-
-# from sqlalchemy import Engine, text
-
-# from logger import log
-# from pipeline.queries_silver import QUERIES_SILVER, SCHEMA_SILVER
-
-
-# def executar_carga_silver(tabela_destino: str, engine: Engine) -> None:
-#     """
-#     Executa TRUNCATE + INSERT INTO ... SELECT para `silver.<tabela_destino>`,
-#     usando a query definida em QUERIES_SILVER.
-
-#     Parameters
-#     ----------
-#     tabela_destino : nome da tabela Silver, sem schema (ex.: "deputado")
-#     engine : engine SQLAlchemy (DB_URI_DDL)
-#     """
-#     query = QUERIES_SILVER.get(tabela_destino)
-#     nome_completo = f"{SCHEMA_SILVER}.{tabela_destino}"
-
-#     if query is None:
-#         log.warning("  [silver] Nenhuma query definida para '%s' — pulando.", nome_completo)
-#         return
-
-#     try:
-#         with engine.begin() as conn:
-#             # TRUNCATE garante full load idempotente
-#             conn.execute(text(f"TRUNCATE TABLE {nome_completo}"))  # noqa: S608
-
-#             resultado = conn.execute(text(query))
-
-#         log.info(
-#             "  [silver] %d linha(s) inserida(s) em '%s'.",
-#             resultado.rowcount, nome_completo,
-#         )
-
-#     except Exception as exc:  # noqa: BLE001
-#         log.error("  [silver] Erro ao carregar '%s': %s", nome_completo, exc)
-#         raise
-
-"""
-pipeline/carga_silver.py
---------------------------
-Responsabilidade: Criar tabelas temporárias na sessão do banco usando os DataFrames 
-da memória e rodar as cargas da Silver de forma isolada, limpa e performática.
-"""
-
-# import os
-# import sys
-# import pandas as pd
-# from sqlalchemy import Engine, text
-
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-# from logger import log
-# from pipeline.queries_silver import QUERIES_SILVER, SCHEMA_SILVER
-# from pipeline.mapeamento_bronze import TABELA_BRONZE, SCHEMA_BRONZE
-
-
-# def executar_carga_silver_em_memoria(tabela_destino: str, engine: Engine, dataframes_bronze: dict[str, pd.DataFrame]) -> None:
-#     """
-#     Injeta os dataframes necessários como tabelas temporárias e executa o INSERT da Silver.
-#     """
-#     query = QUERIES_SILVER.get(tabela_destino)
-#     nome_completo_silver = f'"{SCHEMA_SILVER}"."{tabela_destino}"'
-
-#     if query is None:
-#         log.warning("  [silver] Nenhuma query definida para '%s' — pulando.", tabela_destino)
-#         return
-
-#     try:
-#         # Iniciamos uma transação única
-#         with engine.begin() as conn:
-            
-#             # 1. Cria o schema temporário/físico bronze para a query ler de forma compatível
-#             conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_BRONZE}"'))
-
-#             # 2. Injeta CADA DataFrame do dicionário de memória para dentro do banco de dados
-#             #    COMO tabelas do schema bronze na sessão atual. 
-#             #    Isso substitui as tabelas permanentes antigas e economiza espaço em disco rígido!
-#             for tabela_origem, df_tratado in dataframes_bronze.items():
-#                 nome_tabela_bronze = TABELA_BRONZE.get(tabela_origem)
-                
-#                 if nome_tabela_bronze:
-#                     # Carrega temporariamente para o PostgreSQL usar durante o SELECT da Silver
-#                     df_tratado.to_sql(
-#                         name=nome_tabela_bronze,
-#                         con=conn,
-#                         schema=SCHEMA_BRONZE,
-#                         if_exists="replace", # Substitui o cache da memória na sessão
-#                         index=False,
-#                         method="multi",
-#                         chunksize=50
-#                     )
-
-#             # 3. Limpa a tabela Silver de destino de forma segura
-#             conn.execute(text(f"TRUNCATE TABLE {nome_completo_silver} CASCADE"))
-
-#             # 4. Executa a query de transformação que lê do schema bronze populado acima
-#             resultado = conn.execute(text(query))
-#             linhas_afetadas = resultado.rowcount if resultado.rowcount is not None and resultado.rowcount >= 0 else 0
-
-#         log.info(
-#             "  [silver] %d linha(s) inserida(s) em '%s' a partir da memória.",
-#             linhas_afetadas, nome_completo_silver,
-#         )
-
-#     except Exception as exc:
-#         log.error("  [silver] Erro ao carregar '%s' via memória: %s", nome_completo_silver, exc)
-#         raise
-
-# """
-# pipeline/carga_silver.py
-# --------------------------
-# Responsabilidade: Criar tabelas temporárias na sessão do banco usando os DataFrames 
-# da memória e rodar as cargas da Silver de forma isolada, limpa e performática.
-# """
-
-# import os
-# import sys
-# import pandas as pd
-# from sqlalchemy import Engine, text
-
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-# from logger import log
-# from pipeline.queries_silver import QUERIES_SILVER, SCHEMA_SILVER
-# from pipeline.mapeamento_bronze import TABELA_BRONZE, SCHEMA_BRONZE
-
-
-# def executar_carga_silver_em_memoria(tabela_destino: str, engine: Engine, dataframes_bronze: dict[str, pd.DataFrame]) -> None:
-#     """
-#     Injeta os dataframes necessários como tabelas temporárias e executa o INSERT da Silver.
-#     """
-#     query = QUERIES_SILVER.get(tabela_destino)
-#     nome_completo_silver = f'"{SCHEMA_SILVER}"."{tabela_destino}"'
-
-#     if query is None:
-#         log.warning("  [silver] Nenhuma query definida para '%s' — pulando.", tabela_destino)
-#         return
-
-#     try:
-#         with engine.begin() as conn:
-#             # 1. Cria o schema temporário/físico bronze para a query ler de forma compatível
-#             conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_BRONZE}"'))
-
-#             # 2. Injeta CADA DataFrame do dicionário de memória para dentro do banco de dados
-#             for tabela_origem, df_original in dataframes_bronze.items():
-#                 nome_tabela_bronze = TABELA_BRONZE.get(tabela_origem)
-                
-#                 if nome_tabela_bronze:
-#                     # CORREÇÃO CRÍTICA: Faz uma cópia e limpa os pontos finais (.) substituindo por underline (_)
-#                     # Exemplo: 'deputado_.id' vira 'deputado__id' no banco temporário
-#                     df_tratado = df_original.copy()
-#                     df_tratado.columns = [col.replace(".", "_") for col in df_tratado.columns]
-
-#                     # Carrega temporariamente para o PostgreSQL usar durante o SELECT da Silver
-#                     df_tratado.to_sql(
-#                         name=nome_tabela_bronze,
-#                         con=conn,
-#                         schema=SCHEMA_BRONZE,
-#                         if_exists="replace",
-#                         index=False,
-#                         method="multi",
-#                         chunksize=500
-#                     )
-
-#             # 3. Limpa a tabela Silver de destino de forma segura
-#             conn.execute(text(f"TRUNCATE TABLE {nome_completo_silver} CASCADE"))
-
-#             # 4. Executa a query de transformação que lê do schema bronze populado acima
-#             resultado = conn.execute(text(query))
-#             linhas_afetadas = resultado.rowcount if resultado.rowcount is not None and resultado.rowcount >= 0 else 0
-
-#         log.info(
-#             "  [silver] %d linha(s) inserida(s) em '%s' a partir da memória.",
-#             linhas_afetadas, nome_completo_silver,
-#         )
-
-#     except Exception as exc:
-#         erro_curto = str(exc).split("\n")[0]  # Mantém o terminal limpo em caso de erro
-#         log.error("  [silver] Erro ao carregar '%s' via memória: %s", nome_completo_silver, erro_curto)
-#         raise
-
-"""
-pipeline/carga_silver.py
---------------------------
-Responsabilidade: Criar tabelas temporárias de sessão usando DataFrames 
-da memória e rodar as cargas Silver de forma isolada e performática.
-"""
-
-"""
-pipeline/carga_silver.py
---------------------------
-Responsabilidade: Criar tabelas temporárias voláteis na RAM do PostgreSQL usando 
-os DataFrames da memória e executar a carga Silver sem estourar o timeout.
-"""
-"""
-pipeline/carga_silver.py
---------------------------
-Responsabilidade: Criar tabelas temporárias voláteis na RAM do PostgreSQL usando 
-os DataFrames da memória e executar a carga Silver de forma instantânea.
-"""
-
-"""
-pipeline/carga_silver.py
---------------------------
-Responsabilidade: Criar tabelas físicas de passagem no schema Bronze,
-executar a carga Silver e dropar as origens em seguida para poupar espaço em disco.
-"""
-
-# import os
-# import sys
-# import pandas as pd
-# from sqlalchemy import Engine, text
-
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-# from logger import log
-# from pipeline.queries_silver import QUERIES_SILVER, SCHEMA_SILVER
-# from pipeline.mapeamento_bronze import TABELA_BRONZE, SCHEMA_BRONZE
-
-
-# def executar_carga_silver_em_memoria(tabela_destino: str, engine: Engine, dataframes_bronze: dict[str, pd.DataFrame]) -> None:
-#     """
-#     Cria tabelas físicas de passagem no schema Bronze, roda o INSERT Silver e limpa o banco.
-#     """
-#     query = QUERIES_SILVER.get(tabela_destino)
-#     nome_completo_silver = f'"{SCHEMA_SILVER}"."{tabela_destino}"'
-
-#     if query is None:
-#         log.warning("  [silver] Nenhuma query definida para '%s' — pulando.", tabela_destino)
-#         return
-
-#     # Guardaremos o nome das tabelas físicas criadas para dropá-las no final
-#     tabelas_criadas_fiscamente = []
-
-#     try:
-#         with engine.begin() as conn:
-            
-#             # 1. Garante que o schema bronze exista fisicamente no Supabase
-#             conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_BRONZE}"'))
-
-#             # 2. Injeta os DataFrames como tabelas físicas REAIS (Passagem)
-#             for tabela_origem, df_original in dataframes_bronze.items():
-#                 nome_tabela_bronze = TABELA_BRONZE.get(tabela_origem)
-                
-#                 if nome_tabela_bronze:
-#                     df_tratado = df_original.copy()
-                    
-#                     # Faxina de colunas (converte ponto para underline duplo)
-#                     df_tratado.columns = [col.replace(".", "_") for col in df_tratado.columns]
-
-#                     # Grava como tabela física normal no schema bronze
-#                     df_tratado.to_sql(
-#                         name=nome_tabela_bronze,
-#                         con=conn,
-#                         schema=SCHEMA_BRONZE,
-#                         if_exists="replace",  # Substitui se houver lixo anterior
-#                         index=False,
-#                         chunksize=1000        # Lote estável para tabelas físicas
-#                     )
-                    
-#                     # Guarda o caminho completo para o DROP posterior
-#                     tabelas_criadas_fiscamente.append(f'"{SCHEMA_BRONZE}"."{nome_tabela_bronze}"')
-
-#             # 3. Limpa e esvazia a tabela de destino física (Silver) no Supabase
-#             conn.execute(text(f"TRUNCATE TABLE {nome_completo_silver} CASCADE"))
-
-#             # 4. Executa a query de transformação (lê de bronze.* e insere em silver.*)
-#             # Como as tabelas físicas se chamam 'bronze.votos', sua query original não precisa de replace!
-#             resultado = conn.execute(text(query))
-#             linhas_afetadas = resultado.rowcount if resultado.rowcount is not None and resultado.rowcount >= 0 else 0
-
-#             log.info(
-#                 "  [silver] %d linha(s) inserida(s) em '%s' com sucesso.",
-#                 linhas_afetadas, nome_completo_silver,
-#             )
-
-#             # 5. FAXINA DE DISCO: Dropa as tabelas bronze imediatamente após o uso
-#             log.info("🧹 Efetuando faxina de disco no Supabase...")
-#             for tabela_fisica in tabelas_criadas_fiscamente:
-#                 conn.execute(text(f"DROP TABLE IF EXISTS {tabela_fisica} CASCADE"))
-#                 log.info("    → Tabela de passagem %s eliminada.", tabela_fisica)
-
-#     except Exception as exc:
-#         erro_curto = str(exc).split("\n")
-#         log.error("  [silver] Erro ao carregar '%s' via passagem: %s", nome_completo_silver, erro_curto)
-#         raise
-
-
 """
 pipeline/carga_silver.py
 ------------------------
+
 Carga das tabelas Silver a partir das tabelas Bronze.
+
+Estratégia adotada:
+1. Garante a existência do schema silver;
+2. Dropa todas as tabelas existentes no schema silver, no modo completo;
+3. Dropa somente uma tabela silver, no modo de teste individual;
+4. Recria as tabelas Silver com base em CREATES_SILVER;
+5. Executa os INSERTs/tratamentos definidos em QUERIES_SILVER.
+
+Essa abordagem é adequada para pipeline ponta a ponta e testes,
+principalmente quando existem registros técnicos/substitutos de dimensão
+que precisam nascer novamente a cada execução full refresh.
 """
 
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from logger import log
+from pipeline.creates_silver import CREATES_SILVER
 from pipeline.queries_silver import QUERIES_SILVER
 
 
-def carregar_tabela_silver(
-    nome_tabela: str,
-    query_insert: str,
-    engine: Engine,
+SCHEMA_SILVER = "silver"
+
+
+def _quote_identificador(identificador: str) -> str:
+    """
+    Aplica aspas duplas em identificadores SQL para evitar problemas
+    com nomes reservados, letras maiúsculas ou caracteres especiais.
+    """
+    if not isinstance(identificador, str) or not identificador.strip():
+        raise ValueError("Identificador SQL inválido ou vazio.")
+
+    return f'"{identificador.replace(chr(34), chr(34) * 2)}"'
+
+
+def _nome_tabela_qualificado(schema: str, tabela: str) -> str:
+    """
+    Retorna o nome da tabela no formato:
+        "schema"."tabela"
+    """
+    return f"{_quote_identificador(schema)}.{_quote_identificador(tabela)}"
+
+
+def garantir_schema_silver(conn: Connection) -> None:
+    """
+    Cria o schema Silver caso ele ainda não exista.
+    """
+    log.info("Garantindo existência do schema silver.")
+
+    conn.execute(
+        text(f"CREATE SCHEMA IF NOT EXISTS {_quote_identificador(SCHEMA_SILVER)}")
+    )
+
+
+def listar_tabelas_silver(conn: Connection) -> list[str]:
+    """
+    Lista todas as tabelas físicas existentes no schema silver.
+    """
+    resultado = conn.execute(
+        text(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = :schema
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """
+        ),
+        {"schema": SCHEMA_SILVER},
+    )
+
+    return list(resultado.scalars().all())
+
+
+def dropar_tabelas_silver(conn: Connection) -> None:
+    """
+    Remove todas as tabelas existentes no schema silver.
+
+    Usado na pipeline ponta a ponta.
+    O uso de CASCADE remove dependências diretas, como constraints,
+    indexes dependentes e objetos relacionados à tabela.
+    """
+    tabelas = listar_tabelas_silver(conn)
+
+    if not tabelas:
+        log.info("Nenhuma tabela existente encontrada no schema silver.")
+        return
+
+    log.info(f"Removendo {len(tabelas)} tabela(s) existente(s) no schema silver.")
+
+    for tabela in tabelas:
+        tabela_qualificada = _nome_tabela_qualificado(SCHEMA_SILVER, tabela)
+
+        log.info(f"Dropando tabela silver.{tabela}")
+
+        conn.execute(
+            text(f"DROP TABLE IF EXISTS {tabela_qualificada} CASCADE")
+        )
+
+    log.info("Tabelas existentes no schema silver removidas com sucesso.")
+
+
+def dropar_tabela_silver(conn: Connection, nome_tabela: str) -> None:
+    """
+    Remove uma tabela específica do schema silver.
+
+    Usado principalmente no teste individual da camada Silver.
+    """
+    tabela_qualificada = _nome_tabela_qualificado(SCHEMA_SILVER, nome_tabela)
+
+    log.info(f"Dropando tabela silver.{nome_tabela}")
+
+    conn.execute(
+        text(f"DROP TABLE IF EXISTS {tabela_qualificada} CASCADE")
+    )
+
+    log.info(f"Tabela silver.{nome_tabela} removida com sucesso.")
+
+
+def criar_tabelas_silver(
+    conn: Connection,
+    nome_tabela: str | None = None,
 ) -> None:
     """
-    Trunca e recarrega uma tabela Silver.
-    """
-    log.info(f"Iniciando carga silver.{nome_tabela}")
+    Cria as tabelas Silver a partir do dicionário CREATES_SILVER.
 
-    with engine.begin() as conn:
-        conn.execute(text(f'TRUNCATE TABLE silver."{nome_tabela}" CASCADE'))
+    Quando nome_tabela for informado:
+        cria somente a tabela solicitada.
+
+    Quando nome_tabela for None:
+        cria todas as tabelas Silver.
+    """
+    if not CREATES_SILVER:
+        raise ValueError("Nenhum CREATE TABLE encontrado em CREATES_SILVER.")
+
+    if nome_tabela:
+        if nome_tabela not in CREATES_SILVER:
+            raise KeyError(
+                f"Tabela silver.{nome_tabela} não encontrada em CREATES_SILVER."
+            )
+
+        ddl = CREATES_SILVER[nome_tabela]
+
+        if not ddl or not ddl.strip():
+            raise ValueError(f"DDL vazio para silver.{nome_tabela}")
+
+        log.info(f"Criando tabela silver.{nome_tabela}")
+        conn.execute(text(ddl))
+        log.info(f"Tabela silver.{nome_tabela} criada com sucesso.")
+
+        return
+
+    log.info("Iniciando criação das tabelas Silver.")
+
+    for tabela, ddl in CREATES_SILVER.items():
+        if not ddl or not ddl.strip():
+            raise ValueError(f"DDL vazio para silver.{tabela}")
+
+        log.info(f"Criando tabela silver.{tabela}")
+
+        conn.execute(text(ddl))
+
+    log.info("Tabelas Silver criadas com sucesso.")
+
+
+def carregar_dados_silver(
+    conn: Connection,
+    nome_tabela: str | None = None,
+) -> None:
+    """
+    Executa os INSERTs/tratamentos da camada Silver.
+
+    As queries devem estar em QUERIES_SILVER e devem conter somente
+    as instruções de carga/tratamento, normalmente INSERT INTO ... SELECT ...
+
+    Quando nome_tabela for informado:
+        carrega somente a tabela solicitada.
+
+    Quando nome_tabela for None:
+        carrega todas as tabelas Silver.
+    """
+    if not QUERIES_SILVER:
+        raise ValueError("Nenhuma query de carga encontrada em QUERIES_SILVER.")
+
+    if nome_tabela:
+        if nome_tabela not in QUERIES_SILVER:
+            raise KeyError(
+                f"Tabela silver.{nome_tabela} não encontrada em QUERIES_SILVER."
+            )
+
+        query_insert = QUERIES_SILVER[nome_tabela]
+
+        if not query_insert or not query_insert.strip():
+            raise ValueError(f"Query de carga vazia para silver.{nome_tabela}")
+
+        log.info(f"Iniciando carga silver.{nome_tabela}")
+
         conn.execute(text(query_insert))
 
-    log.info(f"Carga concluída: silver.{nome_tabela}")
+        log.info(f"Carga concluída: silver.{nome_tabela}")
+
+        return
+
+    log.info("Iniciando carga de dados nas tabelas Silver.")
+
+    for tabela, query_insert in QUERIES_SILVER.items():
+        if not query_insert or not query_insert.strip():
+            raise ValueError(f"Query de carga vazia para silver.{tabela}")
+
+        log.info(f"Iniciando carga silver.{tabela}")
+
+        conn.execute(text(query_insert))
+
+        log.info(f"Carga concluída: silver.{tabela}")
+
+    log.info("Carga de dados Silver concluída com sucesso.")
 
 
-def carregar_silver(engine: Engine) -> None:
+def carregar_silver(
+    engine: Engine,
+    nome_tabela: str | None = None,
+) -> None:
     """
-    Executa a carga de todas as tabelas Silver.
+    Executa a carga full refresh da camada Silver.
+
+    Modo pipeline ponta a ponta:
+        carregar_silver(engine)
+
+    Modo teste individual:
+        carregar_silver(engine=engine, nome_tabela="deputado")
+
+    Fluxo no modo completo:
+    1. Cria o schema silver, se necessário;
+    2. Dropa todas as tabelas existentes;
+    3. Recria todas as tabelas;
+    4. Insere todos os dados tratados.
+
+    Fluxo no modo individual:
+    1. Cria o schema silver, se necessário;
+    2. Dropa somente a tabela informada;
+    3. Recria somente a tabela informada;
+    4. Insere somente os dados da tabela informada.
+
+    A execução ocorre dentro de uma única transação.
+    Se qualquer etapa falhar, o banco faz rollback automático.
     """
-    for nome_tabela, query_insert in QUERIES_SILVER.items():
-        carregar_tabela_silver(
-            nome_tabela=nome_tabela,
-            query_insert=query_insert,
-            engine=engine,
-        )
+    if nome_tabela:
+        log.info(f"Iniciando carga full refresh individual: silver.{nome_tabela}")
+    else:
+        log.info("Iniciando carga full refresh completa da camada Silver.")
+
+    with engine.begin() as conn:
+        garantir_schema_silver(conn)
+
+        if nome_tabela:
+            dropar_tabela_silver(
+                conn=conn,
+                nome_tabela=nome_tabela,
+            )
+
+            criar_tabelas_silver(
+                conn=conn,
+                nome_tabela=nome_tabela,
+            )
+
+            carregar_dados_silver(
+                conn=conn,
+                nome_tabela=nome_tabela,
+            )
+        else:
+            dropar_tabelas_silver(conn)
+            criar_tabelas_silver(conn)
+            carregar_dados_silver(conn)
+
+    if nome_tabela:
+        log.info(f"Carga full refresh individual concluída: silver.{nome_tabela}")
+    else:
+        log.info("Carga full refresh completa da camada Silver concluída com sucesso.")

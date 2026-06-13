@@ -75,11 +75,11 @@ CREATES_SILVER: dict[str, str] = {
     "votacao": """
         CREATE TABLE silver.votacao 
         (
-            "idVotacao" int not null,
-            "idOrgao" int not null default -1,
-            "idEvento" int not null default -1,
-            "idDeputado" int not null default -1,
-            "idProposicao" int not null default -3, 
+            "idVotacao" bigint not null,
+            "idOrgao" bigint not null default -1,
+            "idEvento" bigint not null default -1,
+            "idDeputado" bigint not null default -1,
+            "idProposicao" bigint not null default -3, 
             "tipoVoto" text not null default 'NÃO INFORMADO',
             "dataVoto" date not null default '9999-12-31',
             "descricaoVotacao" text not null default 'NÃO INFORMADO',
