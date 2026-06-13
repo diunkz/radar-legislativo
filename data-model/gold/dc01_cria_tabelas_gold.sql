@@ -125,7 +125,7 @@ CREATE TABLE gold.ft_proposicao
   "sk_orgao" int not null,
   "sk_proposicao" int not null,
   "sk_data_proposicao" int not null,
-  "nr_classificacao" decimal(10,6) not null, -- coluna da IA
+  "nr_classificacao" double precision not null, -- coluna da IA
   "qtd_proposicao" int not null,
   "dh_ingestao" timestamp without time zone not null default current_timestamp,
   constraint ft_proposicao_pkey primary key (sk_deputado, sk_orgao, sk_proposicao, sk_data_proposicao)

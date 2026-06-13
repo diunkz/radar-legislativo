@@ -89,3 +89,15 @@ CREATE TABLE silver.despesa
   "dataIngestao" date not null default current_timestamp
 ) TABLESPACE pg_default; 
 ---------------------
+
+------ PROPOSICAO IA ------
+CREATE TABLE silver.proposicoes_ia (
+  proposicao_id integer not null,
+  tema_classificado text null,
+  score_similaridade double precision null,
+  resumo_executivo text null,
+  processado_em timestamp with time zone null default now(),
+  embedding public.vector null,
+  constraint proposicoes_ia_pkey primary key (proposicao_id)
+) TABLESPACE pg_default;
+---------------------------
