@@ -5,28 +5,8 @@ Variáveis de ambiente, constantes globais e paths do projeto.
 Centralizar aqui evita "magic strings/values" espalhados pelo código.
 """
 
-import shutil
 import os
-from logger import log
-from datetime import datetime
-from pathlib import Path
 from dotenv import load_dotenv
-
-load_dotenv()
-
-# ---------------------------------------------------------------------------
-# Pasta de saída dos CSVs ajustados
-# ---------------------------------------------------------------------------
-OUTPUT_DIR = Path(__file__).parent / "output" / "ajustadas"
-
-if OUTPUT_DIR.exists():
-    shutil.rmtree(OUTPUT_DIR)
-    log.info("🗑️  Pasta anterior removida: %s", OUTPUT_DIR)
-
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-log.info("📁 Pasta criada: %s", OUTPUT_DIR)
-
-TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ---------------------------------------------------------------------------
 # Credenciais / URIs  — nunca hardcodar, sempre via .env
@@ -39,12 +19,14 @@ DB_KEY: str     = os.getenv("DB_KEY", "")      # chave anon/service
 DB_URI_DDL: str = os.getenv("DB_URI_DDL", "")  # direta :5432 — DDL
 
 # ---------------------------------------------------------------------------
-# Tabelas do projeto (adicione/remova conforme necessário)
+# Tabelas a processar  (= todas as tabelas staging consumidas pelos JOINs
+# da camada Silver, ver pipeline/queries_silver.py e pipeline/mapeamento_bronze.py)
 # ---------------------------------------------------------------------------
 TABELAS: list[str] = [
     "stg_deputados_bruto",
     "stg_despesas_bruto",
     "stg_eventos_bruto",
+    "stg_eventos_orgaos_bruto",
     "stg_frentes_bruto",
     "stg_legislaturas_bruto",
     "stg_liderancas_bruto",

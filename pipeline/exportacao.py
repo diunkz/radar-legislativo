@@ -1,19 +1,35 @@
 """
 pipeline/exportacao.py
 -----------------------
-Etapas 6 + 7 — Exportação CSV.
+Etapas 9 — Exportação CSV.
 Salva o DataFrame final em OUTPUT_DIR com nome padronizado e timestamp.
 """
 
 import pandas as pd
-from pathlib import Path
-from config import OUTPUT_DIR
+import shutil
 from logger import log
-from config import TIMESTAMP
+from datetime import datetime
+from pathlib import Path
+from logger import log
+
+
+# ---------------------------------------------------------------------------
+# Pasta de saída dos CSVs ajustados
+# ---------------------------------------------------------------------------
+OUTPUT_DIR = Path(__file__).parent / "output" / "ajustadas"
+
+if OUTPUT_DIR.exists():
+    shutil.rmtree(OUTPUT_DIR)
+    log.info("🗑️  Pasta anterior removida: %s", OUTPUT_DIR)
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+log.info("📁 Pasta criada: %s", OUTPUT_DIR)
+
+TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 # ===========================================================================
-# 6 + 7. EXPORTAÇÃO CSV → data/ajustadas/
+# 9. EXPORTAÇÃO CSV → data/ajustadas/
 # ===========================================================================
 
 def exportar_csv(df: pd.DataFrame, tabela: str) -> Path:

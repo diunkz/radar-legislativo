@@ -96,6 +96,20 @@ CONVERSAO_TIPOS: dict[str, dict[str, str]] =    {
         "data_captura":        "datetime64[ns]"   # PostgreSQL: TIMESTAMPTZ
     },
 
+    "stg_eventos_orgaos_bruto": {
+        "id":                  "Int64",           # PostgreSQL: BIGINT
+        "uri":                 "string",          # PostgreSQL: TEXT
+        "sigla":               "string",          # PostgreSQL: TEXT
+        "nome":                "string",          # PostgreSQL: TEXT
+        "apelido":             "string",          # PostgreSQL: TEXT
+        "codTipoOrgao":        "Int64",           # PostgreSQL: BIGINT
+        "tipoOrgao":           "string",          # PostgreSQL: TEXT
+        "nomePublicacao":      "string",          # PostgreSQL: TEXT
+        "nomeResumido":        "string",          # PostgreSQL: TEXT
+        "idEventoContexto":    "Int64",           # PostgreSQL: BIGINT
+        "data_captura":        "datetime64[ns]"   # PostgreSQL: TIMESTAMPTZ
+    },
+
     "stg_frentes_bruto": {
         "id":              "Int64",           # PostgreSQL: BIGINT
         "uri":             "string",          # PostgreSQL: TEXT
@@ -220,7 +234,7 @@ CONVERSAO_TIPOS: dict[str, dict[str, str]] =    {
     },
 
     "stg_votacoes_bruto": {
-        "id":                   "string",          # PostgreSQL: TEXT
+        "id":                   "string",          # PostgreSQL: INTEGER
         "uri":                  "string",          # PostgreSQL: TEXT
         "data":                 "datetime64[ns]",  # PostgreSQL: DATE
         "dataHoraRegistro":     "datetime64[ns]",  # PostgreSQL: TIMESTAMPTZ
@@ -237,7 +251,7 @@ CONVERSAO_TIPOS: dict[str, dict[str, str]] =    {
     "stg_votos_bruto": {
         "tipoVoto":                    "string",          # PostgreSQL: TEXT
         "dataRegistroVoto":            "datetime64[ns]",  # PostgreSQL: TIMESTAMPTZ
-        "idVotacaoContexto":           "Int64",           # PostgreSQL: BIGINT
+        "idVotacaoContexto":           "string",          # PostgreSQL: BIGINT
         "deputado_.id":                "Int64",           # PostgreSQL: BIGINT
         "deputado_.uri":               "string",          # PostgreSQL: TEXT
         "deputado_.nome":              "string",          # PostgreSQL: TEXT

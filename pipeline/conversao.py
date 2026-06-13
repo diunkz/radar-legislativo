@@ -46,10 +46,26 @@ from logger import log
 # ===========================================================================
 
 def _converter_inteiro(serie: pd.Series, coluna: str) -> pd.Series:
-    """Converte para Int64 nullable com tratamento de erros."""
+    """Converte para Int64 nullable com tratamento de erros e remoção de hífens."""
+    # AJUSTE: Remove hífens de IDs (como idVotacao) antes de converter para número
+    if serie.dtype == "object":
+        serie = serie.str.replace("-", "", regex=False)
+        
     serie = pd.to_numeric(serie, errors="coerce")
     return serie.astype("Int64")
 
+def _converter_string(serie: pd.Series, coluna: str, tabela: str) -> pd.Series:
+    """
+    Converte para String e limpa o hífen caso seja a coluna 'id' 
+    especificamente da tabela 'stg_votacoes_bruto'.
+    """
+    serie = serie.astype(str)
+    
+    # AJUSTE: Limpa o hífen se a tabela for stg_votacoes_bruto e a coluna for 'id'
+    if coluna == "id" and tabela == "stg_votacoes_bruto":
+        serie = serie.str.replace("-", "", regex=False)
+        
+    return serie
 
 def _converter_float(serie: pd.Series, coluna: str) -> pd.Series:
     """Converte para Float64 nullable com tratamento de erros."""
@@ -85,7 +101,7 @@ _CONVERSORES: dict[str, callable] = {
     "Int64":          _converter_inteiro,
     "Float64":        _converter_float,
     "datetime64[ns]": _converter_datetime,
-    "boolean":        _converter_boolean,
+    "boolean":        _converter_boolean
 }
 
 
