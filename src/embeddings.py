@@ -21,7 +21,7 @@ import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
 
-from config import BATCH_SIZE, EMBEDDING_MODEL, TEMAS
+from .config import BATCH_SIZE, EMBEDDING_MODEL, TEMAS
 
 logger = logging.getLogger(__name__)
 

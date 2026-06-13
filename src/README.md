@@ -39,6 +39,43 @@ CREATE TABLE proposicoes_ia (
 
 ---
 
+### Decisões de modelagem
+
+#### Modelo de embeddings — `intfloat/multilingual-e5-large`
+
+Avaliamos duas opções principais:
+
+| Modelo | Dimensão | Língua | Benchmark pt-BR |
+|--------|----------|--------|-----------------|
+| `neuralmind/bert-base-portuguese-cased` | 768 | Português | Bom |
+| `BAAI/bge-m3` | 1024 | Multilíngue | Muito bom |
+| `intfloat/multilingual-e5-large` ✓ | 1024 | Multilíngue | **Superior** |
+
+O `multilingual-e5-large` foi escolhido por apresentar scores de similaridade consistentemente mais altos nos testes com ementas legislativas brasileiras. Diferente do BERT (treinado especificamente em português mas com dimensão menor) e do bge-m3 (excelente em retrieval mas testado sem diferencial claro neste domínio), o e5-large demonstrou melhor separação semântica entre os temas nas avaliações práticas com os dados reais do projeto.
+
+Um detalhe crítico de implementação: o modelo exige os prefixos `query:` nos textos a classificar e `passage:` nos textos de referência. Sem eles, o modelo não aplica a camada de instrução e a qualidade da similaridade cai significativamente.
+
+#### Modelo de resumos — bulk: `qwen2.5:14b` (Ollama)
+
+Para processar o histórico completo de ~15 mil proposições, o requisito principal era rodar localmente sem custo e sem limite de requisições. Avaliamos os modelos disponíveis no Ollama compatíveis com a VRAM disponível (RTX 3060 12GB):
+
+| Modelo | VRAM (4-bit) | Qualidade pt-BR | Velocidade |
+|--------|-------------|-----------------|------------|
+| `llama3.1:8b` | ~6GB | Boa | Rápida |
+| `gemma3:12b` | ~8GB | Ótima | Boa |
+| `qwen2.5:14b` ✓ | ~9GB | **Excelente** | Boa |
+| `mistral-small:22b` | ~13GB | Excelente | Lenta |
+
+O `qwen2.5:14b` foi escolhido por combinar qualidade superior em português com consumo de VRAM confortável para a GPU disponível — cabe com folga nos 12GB sem recorrer a offloading para RAM, o que mantém a velocidade de inferência alta. O `mistral-small:22b` ficou de fora por ficar no limite da VRAM e degradar performance.
+
+#### Modelo de resumos — incremental: `llama-3.3-70b-versatile` (Groq)
+
+Para o fluxo incremental (novas proposições chegando diariamente), o volume é pequeno o suficiente para usar a API da Groq gratuitamente. O `llama-3.3-70b-versatile` foi escolhido como modelo principal por ser o mais capaz disponível no plano gratuito — com 70 bilhões de parâmetros, produz resumos com melhor compreensão de contexto legislativo e linguagem mais precisa que os modelos menores.
+
+A cadeia de fallback (`llama-3.1-8b-instant` → `mixtral-8x7b-32768`) foi adicionada para garantir continuidade quando o limite diário de tokens do 70b é atingido. O `gemma2-9b-it` foi removido da cadeia após ser descontinuado pela Groq em produção.
+
+---
+
 ### Temas classificados
 
 `Saúde · Tributário · Trabalho · Tecnologia · Meio Ambiente · Educação · Segurança Pública · Infraestrutura · Economia · Direitos Sociais`
@@ -69,19 +106,27 @@ pipeline interrompido — retoma amanhã após reset (00:00 UTC)
 
 ---
 
-### Salvamento incremental por lote
+### Estratégia de persistência
 
-O pipeline processa e **salva no banco a cada lote de 50 proposições** (configurável). Interrupções — por limite de tokens, queda de rede ou qualquer outro erro — não causam perda de dados. Os lotes já salvos são pulados automaticamente na próxima execução.
+O pipeline opera em **duas fases separadas** para eliminar os riscos de timeout de conexão com o Supabase durante o processamento intensivo de IA:
+
+**Fase 1 — Processamento local**
+
+Cada lote é processado e salvo em disco como arquivo `.parquet` na pasta `resultados/`, sem nenhuma interação com o banco. Em caso de interrupção, os lotes já salvos são detectados automaticamente e pulados na próxima execução.
 
 ```
-lote 1 (50)  →  classifica + embedding + resume  →  salva ✓
-lote 2 (50)  →  classifica + embedding + resume  →  salva ✓
+lote 1 (50)  →  classifica + resume  →  resultados/lote_0001.parquet ✓
+lote 2 (50)  →  classifica + resume  →  resultados/lote_0002.parquet ✓
 lote N (50)  →  interrompido
                       ↓
-próxima execução: retoma do lote N automaticamente
+próxima execução: lotes 1 e 2 já existem → pula → retoma do lote N
 ```
 
-O `db.py` monta o SQL de upsert **dinamicamente** com base nas colunas presentes no DataFrame — permitindo rodar `--apenas-embeddings` ou `--apenas-resumos` sem erros de coluna ausente. Em caso de falha de conexão com o Supabase, há retry automático com 3 tentativas (espera de 5s, 10s e 15s entre elas).
+**Fase 2 — Upload ao Supabase**
+
+Após todos os lotes processados, os parquets são lidos e enviados ao banco em sequência. O upload pode ser reexecutado de forma independente com `--apenas-upload`.
+
+O `db.py` monta o SQL de upsert **dinamicamente** com base nas colunas presentes no DataFrame — permitindo rodar `--apenas-embeddings` ou `--apenas-resumos` sem erros de coluna ausente. Em caso de falha de conexão, há retry automático com 3 tentativas (5s → 10s → 15s entre elas).
 
 ---
 
@@ -89,11 +134,17 @@ O `db.py` monta o SQL de upsert **dinamicamente** com base nas colunas presentes
 
 ```
 etapa4/
-├── config.py        # parâmetros globais: modelo, dimensão, temas, rate limit
-├── db.py            # leitura de stg_proposicoes_bruto, upsert dinâmico em proposicoes_ia
-├── embeddings.py    # Caminho A: embeddings + similaridade de cosseno
-├── resumos.py       # Caminho B: resumos paralelos via Ollama ou Groq com fallback
-├── main.py          # orquestrador com CLI e salvamento por lote
+├── run.py              # ponto de entrada — execute a partir daqui
+├── src/                # pacote Python com toda a lógica do pipeline
+│   ├── __init__.py
+│   ├── config.py       # parâmetros globais: modelo, dimensão, temas, rate limit
+│   ├── db.py           # leitura de stg_proposicoes_bruto, upsert dinâmico em proposicoes_ia
+│   ├── embeddings.py   # Caminho A: embeddings + similaridade de cosseno
+│   ├── resumos.py      # Caminho B: resumos paralelos via Ollama ou Groq com fallback
+│   └── main.py         # orquestrador com CLI, persistência local e upload
+├── resultados/         # pasta criada automaticamente com os parquets por lote
+│   ├── lote_0001.parquet
+│   └── lote_NNNN.parquet
 ├── requirements.txt
 └── env.example
 ```
@@ -118,7 +169,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ### Instalação
 
 ```bash
-pip install -r /requirements.txt
+pip install -r etapa4/requirements.txt
 ```
 
 > O modelo `multilingual-e5-large` (~1.1GB) é baixado automaticamente na primeira execução via cache do HuggingFace. Nas execuções seguintes é carregado do disco.
@@ -144,26 +195,32 @@ cp etapa4/env.example etapa4/.env
 
 ```bash
 # Teste inicial (recomendado antes de rodar tudo)
-python main.py --limite 10
+python run.py --limite 10
 
 # Bulk completo — histórico via Ollama local
-python main.py
+python run.py
 
 # Incremental — novas proposições via Groq
-python main.py --incremental
+python run.py --incremental
 
 # Reprocessar tudo do zero
-python main.py --reprocessar
+python run.py --reprocessar
 
 # Rodar apenas um dos caminhos
-python main.py --apenas-embeddings
-python main.py --apenas-resumos
+python run.py --apenas-embeddings
+python run.py --apenas-resumos
 
 # Ajustar tamanho do lote (padrão: 50)
-python main.py --tamanho-lote 100
+python run.py --tamanho-lote 100
+
+# Enviar parquets locais ao banco sem reprocessar (útil após interrupção)
+python run.py --apenas-upload
+
+# Enviar e limpar os parquets locais após upload
+python run.py --apenas-upload --limpar-resultados
 ```
 
-O pipeline é **incremental por padrão**: processa apenas proposições sem registro em `proposicoes_ia`. Interrupções não causam retrabalho.
+O pipeline é **incremental por padrão**: processa apenas proposições sem registro em `proposicoes_ia`. Interrupções não causam retrabalho — os lotes em `resultados/` são retomados automaticamente e o upload pode ser feito separadamente com `--apenas-upload`.
 
 ---
 

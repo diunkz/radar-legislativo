@@ -20,11 +20,11 @@ import pandas as pd
 import requests
 from groq import Groq
 
-from config import GROQ_API_KEY, GROQ_MAX_RPM
+from .config import GROQ_API_KEY, GROQ_MAX_RPM
 
 # Número de threads paralelas para o Ollama (bulk)
 # RTX 3060 12GB aguenta 3-4 requisições simultâneas no qwen2.5:14b
-OLLAMA_WORKERS = 4
+OLLAMA_WORKERS = 3
 
 logger = logging.getLogger(__name__)
 
