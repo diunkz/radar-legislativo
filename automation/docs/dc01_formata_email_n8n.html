@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .header {
+      background-color: #1a3a5c;
+      padding: 24px 32px;
+      color: #ffffff;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .header p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      opacity: 0.8;
+    }
+    .card {
+      border-left: 4px solid #1a3a5c;
+      margin: 20px 32px;
+      padding: 16px 20px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #1a3a5c;
+      margin: 0 0 8px;
+    }
+    .badge {
+      display: inline-block;
+      background-color: #e8f0fe;
+      color: #1a3a5c;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+    }
+    .score {
+      display: inline-block;
+      background-color: #e6f4ea;
+      color: #2e7d32;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-left: 6px;
+      margin-bottom: 8px;
+    }
+    .meta {
+      font-size: 12px;
+      color: #666;
+      margin: 6px 0;
+    }
+    .resumo {
+      font-size: 13px;
+      color: #333;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+    .footer {
+      text-align: center;
+      padding: 20px 32px;
+      font-size: 11px;
+      color: #999;
+      border-top: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <h1>Radar Legislativo</h1>
+      <p>Top proposições da semana · Classificadas por IA · {{ $now.toFormat('dd/MM/yyyy') }}</p>
+    </div>
+
+    {{ $json.proposicoes.map((p, i) => `
+    <div class="card">
+      <div class="card-title">${i + 1}. ${p.sg_tipo_proposicao} ${p.id_proposicao}</div>
+      <span class="badge">${p.ds_tema_classificado}</span>
+      <span class="score">Confiança IA: ${p.score_pct}%</span>
+      <div class="meta"><strong>Autor:</strong> ${p.nm_deputado} (${p.sg_partido}/${p.sg_uf})</div>
+      <div class="meta"><strong>Situação:</strong> ${p.ds_situacao}</div>
+      <div class="meta"><strong>Apresentada em:</strong> ${new Date(p.dt_apresentacao).toLocaleDateString('pt-BR')}</div>
+      <div class="resumo">${p.ds_resumo_executivo}</div>
+    </div>
+    `).join('') }}
+
+    <div class="footer">
+      Este relatório foi gerado automaticamente pelo pipeline do Radar Legislativo.<br/>
+      Bússola Pública · Inteligência Legislativa
+    </div>
+
+  </div>
+</body>
+</html>
