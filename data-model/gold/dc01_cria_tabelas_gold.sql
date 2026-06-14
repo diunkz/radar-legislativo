@@ -83,6 +83,9 @@ CREATE TABLE gold.dim_proposicao
   "sg_tipo_proposicao" text not null,
   "ds_tipo_proposicao" text not null,
   "ds_situacao"text not null,
+  "ds_tema_classificado" text not null default 'NÃO CLASSIFICADO',
+  "nr_score_similaridade" double precision not null default 0,
+  "ds_resumo_executivo"  text not null default 'NÃO INFORMADO',
   "dt_inicio_vigencia" date not null default current_date,
   "dt_fim_vigencia" date not null default '9999-12-31',
   "dh_ingestao" timestamp without time zone not null default current_timestamp,
@@ -124,8 +127,7 @@ CREATE TABLE gold.ft_proposicao
   "sk_deputado" int not null,
   "sk_orgao" int not null,
   "sk_proposicao" int not null,
-  "sk_data_proposicao" int not null,
-  "nr_classificacao" double precision not null, -- coluna da IA
+  "sk_data_proposicao" int not null,   
   "qtd_proposicao" int not null,
   "dh_ingestao" timestamp without time zone not null default current_timestamp,
   constraint ft_proposicao_pkey primary key (sk_deputado, sk_orgao, sk_proposicao, sk_data_proposicao)
