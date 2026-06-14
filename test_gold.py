@@ -35,7 +35,7 @@ from pipeline.queries_gold import QUERIES_GOLD
 # EDITE AQUI: escolha uma tabela Gold para testar
 # ============================================================
 
-TABELA_TESTE = "ft_despesa"
+TABELA_TESTE = "dim_proposicao"
 
 
 # ============================================================

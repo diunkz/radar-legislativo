@@ -206,6 +206,9 @@ CREATES_GOLD: dict[str, str] = {
             "sg_tipo_proposicao" text not null,
             "ds_tipo_proposicao" text not null,
             "ds_situacao" text not null,
+            "ds_tema_classificado" text not null default 'NÃO CLASSIFICADO',    --coluna_ia
+            "nr_score_similaridade" double precision not null default 0,        --coluna_ia
+            "ds_resumo_executivo"  text not null default 'NÃO INFORMADO',       --coluna_ia
             "dt_inicio_vigencia" date not null default current_date,
             "dt_fim_vigencia" date not null default '9999-12-31',
             "dh_ingestao" timestamp without time zone not null default current_timestamp,

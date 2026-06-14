@@ -16,6 +16,8 @@ Estratégia:
 
     A cada execução:
     1. Remove os schemas bronze, silver e gold, se existirem;
+       - Exceção: no schema silver, preserva objetos com sufixo "_ia"
+         como silver.proposicoes_ia;
     2. Recria a Bronze física transitória;
     3. Recria a camada Silver com DROP + CREATE + INSERT;
     4. Recria a camada Gold com DROP + CREATE + INSERT;
@@ -56,6 +58,10 @@ SCHEMAS_PIPELINE = [
     "gold",
 ]
 
+SCHEMAS_COM_TABELAS_IA_PRESERVADAS = {
+    "silver",
+}
+
 
 # ============================================================
 # Mapeamento Staging -> Bronze física
@@ -94,13 +100,121 @@ def _quote_identificador(identificador: str) -> str:
     return f'"{identificador.replace(chr(34), chr(34) * 2)}"'
 
 
+def dropar_objetos_schema_preservando_ia(
+    engine: Engine,
+    schema: str,
+) -> None:
+    """
+    Remove objetos de um schema preservando objetos com sufixo '_ia'.
+
+    Objetivo:
+        Permitir FULL REFRESH da camada Silver sem apagar tabelas
+        analíticas/manuais criadas fora deste pipeline, como:
+
+            silver.proposicoes_ia
+
+    Observação:
+        A preservação considera objetos cujo nome termina com '_ia'.
+        Exemplo preservado:
+            proposicoes_ia
+
+        Exemplo não preservado:
+            proposicoes_ia_backup
+    """
+    schema_quotado = _quote_identificador(schema)
+
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_quotado}"))
+
+        objetos = conn.execute(
+            text(
+                """
+                SELECT
+                    c.relname AS nome_objeto,
+                    CASE c.relkind
+                        WHEN 'r' THEN 'TABLE'
+                        WHEN 'p' THEN 'TABLE'
+                        WHEN 'v' THEN 'VIEW'
+                        WHEN 'm' THEN 'MATERIALIZED VIEW'
+                        WHEN 'f' THEN 'FOREIGN TABLE'
+                    END AS comando_drop,
+                    CASE c.relkind
+                        WHEN 'r' THEN 3
+                        WHEN 'p' THEN 3
+                        WHEN 'f' THEN 3
+                        WHEN 'v' THEN 1
+                        WHEN 'm' THEN 2
+                    END AS ordem_drop
+                FROM pg_catalog.pg_class c
+                INNER JOIN pg_catalog.pg_namespace n
+                    ON n.oid = c.relnamespace
+                WHERE n.nspname = :schema
+                  AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+                  AND c.relname NOT LIKE :padrao_preservado ESCAPE '\\'
+                ORDER BY ordem_drop, c.relname
+                """
+            ),
+            {
+                "schema": schema,
+                "padrao_preservado": "%\\_ia",
+            },
+        ).mappings().all()
+
+        if not objetos:
+            log.info(
+                "  ✔ Schema '%s' não possui objetos removíveis. "
+                "Tabelas '_ia' foram preservadas, se existirem.",
+                schema,
+            )
+            return
+
+        for objeto in objetos:
+            nome_objeto = objeto["nome_objeto"]
+            comando_drop = objeto["comando_drop"]
+
+            objeto_quotado = _quote_identificador(nome_objeto)
+
+            conn.execute(
+                text(
+                    f"DROP {comando_drop} IF EXISTS "
+                    f"{schema_quotado}.{objeto_quotado} CASCADE"
+                )
+            )
+
+            log.info(
+                "  ✔ Objeto '%s.%s' removido.",
+                schema,
+                nome_objeto,
+            )
+
+    log.info(
+        "  ✔ Schema '%s' limpo preservando objetos com sufixo '_ia'.",
+        schema,
+    )
+
+
 def dropar_schema(
     engine: Engine,
     schema: str,
 ) -> None:
     """
     Remove um schema inteiro, se existir.
+
+    Exceção:
+        Schemas definidos em SCHEMAS_COM_TABELAS_IA_PRESERVADAS
+        não são removidos integralmente. Nesses casos, apenas os objetos
+        sem sufixo '_ia' são removidos.
+
+    Exemplo:
+        silver.proposicoes_ia será preservada.
     """
+    if schema in SCHEMAS_COM_TABELAS_IA_PRESERVADAS:
+        dropar_objetos_schema_preservando_ia(
+            engine=engine,
+            schema=schema,
+        )
+        return
+
     schema_quotado = _quote_identificador(schema)
 
     with engine.begin() as conn:
@@ -119,6 +233,9 @@ def preparar_ambiente_inicial(engine: Engine) -> None:
     Remove bronze, silver e gold no início da execução para garantir
     que não existam resíduos de tabelas, constraints, sequences ou dados
     de execuções anteriores.
+
+    Exceção:
+        No schema silver, objetos com sufixo '_ia' são preservados.
     """
     log.info("")
     log.info("=" * 60)
@@ -126,6 +243,7 @@ def preparar_ambiente_inicial(engine: Engine) -> None:
     log.info("=" * 60)
     log.info("  Estratégia: FULL REFRESH")
     log.info("  Ação: remover schemas bronze, silver e gold.")
+    log.info("  Exceção: preservar objetos '_ia' no schema silver.")
 
     for schema in SCHEMAS_PIPELINE:
         dropar_schema(
@@ -314,7 +432,7 @@ def main() -> None:
     log.info("=" * 60)
     log.info("🏁 PIPELINE EXECUTADA COM SUCESSO")
     log.info("🥉 Bronze física criada, usada e removida ao final.")
-    log.info("🔮 Silver recriada via DROP + CREATE + INSERT.")
+    log.info("🔮 Silver recriada preservando objetos com sufixo '_ia'.")
     log.info("🏆 Gold recriada via DROP + CREATE + INSERT.")
     log.info("=" * 60)
 

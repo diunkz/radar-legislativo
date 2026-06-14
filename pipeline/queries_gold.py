@@ -115,15 +115,36 @@ QUERIES_GOLD: dict[str, str] = {
             "sg_tipo_proposicao",
             "ds_tipo_proposicao",
             "ds_situacao",
+            "ds_tema_classificado",      --coluna_ia
+            "nr_score_similaridade",     --coluna_ia
+            "ds_resumo_executivo",       --coluna_ia
             "dh_ingestao"
         )
         SELECT DISTINCT
-            "idProposicao"              AS "id_proposicao",
-            "siglaTipoProposicao"       AS "sg_tipo_proposicao",
-            "descricaoTipoProposicao"   AS "ds_tipo_proposicao",
-            "statusProposicao"          AS "ds_situacao",
-            current_timestamp           AS "dh_ingestao"
-        FROM silver.proposicao;
+            prop."idProposicao"              AS "id_proposicao",
+            prop."siglaTipoProposicao"       AS "sg_tipo_proposicao",
+            prop."descricaoTipoProposicao"   AS "ds_tipo_proposicao",
+            prop."statusProposicao"          AS "ds_situacao",
+
+            COALESCE(
+                NULLIF(UPPER(TRIM(ia."tema_classificado")), ''),
+                'NÃO CLASSIFICADO'
+            ) AS "ds_tema_classificado",
+
+            COALESCE(
+                ia."score_similaridade",
+                0
+            ) AS "nr_score_similaridade",
+
+            COALESCE(
+                NULLIF(UPPER(TRIM(ia."resumo_executivo")), ''),
+                'SEM RESUMO EXECUTIVO GERADO'
+            ) AS "ds_resumo_executivo",
+
+            current_timestamp AS "dh_ingestao"
+        FROM silver.proposicao prop
+        LEFT JOIN silver.proposicoes_ia ia
+            ON prop."idProposicao" = ia."proposicao_id";
     """,
 
     # -----------------------------------------------------------------
