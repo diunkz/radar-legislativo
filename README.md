@@ -1,526 +1,541 @@
-# Radar Legislativo — Pipeline de Ingestão, Tratamento e Modelo Dimensional
+# Radar Legislativo — Pipeline de Dados
 
-Projeto de engenharia de dados para ingestão, tratamento e modelagem analítica de dados legislativos, com persistência em Supabase/PostgreSQL e organização em camadas **Staging**, **Bronze** (temp), **Silver** e **Gold**.
+Projeto de engenharia de dados para ingestão, tratamento, organização e disponibilização analítica de dados legislativos consumidos da API da Câmara dos Deputados.
 
-O projeto parte de dados consumidos pela API na etapa de extração, transforma as tabelas staging em estruturas tratadas, cria uma camada Bronze física transitória, gera a camada Silver com regras de negócio e finaliza com a camada Gold em modelo dimensional com dimensões e fatos.
-
----
-
-## Visão geral do fluxo.
+O pipeline foi estruturado em camadas, seguindo uma arquitetura próxima ao modelo **Medallion Architecture**:
 
 ```text
-API / Staging
-    -> Tratamento em memória com Pandas
-    -> Exportação CSV de dados tratados
-    -> Bronze física transitória no Supabase/PostgreSQL
-    -> Silver full refresh
-    -> Gold dimensional full refresh
-    -> Drop da Bronze transitória
+API Câmara dos Deputados
+        ↓
+Extract / Staging
+        ↓
+Tratamento em memória com Pandas
+        ↓
+Bronze física transitória — Supabase/PostgreSQL
+        ↓
+Silver — dados tratados e modelados
+        ↓
+Gold — dimensões e fatos analíticos
+        ↓
+Consumo analítico / BI / IA
 ```
 
-A estratégia final adotada é **FULL REFRESH**. A cada execução ponta a ponta, os schemas técnicos do pipeline são removidos e recriados, evitando resíduos de execuções anteriores, duplicidades e inconsistências de chave substituta.
+---
+
+## 1. Objetivo do Projeto
+
+O objetivo do projeto é estruturar uma base legislativa confiável, tratada e pronta para análises, contemplando dados de deputados, proposições, despesas, votações, votos, eventos, frentes, lideranças, partidos, órgãos e legislaturas.
+
+A etapa atual do projeto tem foco em:
+
+- ingestão dos dados vindos da API;
+- padronização e tratamento das tabelas staging;
+- criação de camada Bronze física transitória;
+- carga das camadas Silver e Gold;
+- testes individuais das camadas Silver e Gold;
+- preservação de tabelas analíticas complementares geradas por IA.
 
 ---
 
-## Responsabilidades implementadas no projeto
+## 2. Estrutura Geral do Fluxo
 
-As etapas abaixo foram realizadas integralmente pelo autor do projeto após o consumo inicial da API:
+### 2.1 Extract / Staging
 
-| Etapa | Responsabilidade |
-|---|---|
-| `PIPELINE` após consumo da API | Tratamento das tabelas staging carregadas pela `src/extract.py` |
-| `OUTPUT` | Geração de arquivos CSV com dados tratados após consumo das staging da API |
-| `main.py` | Orquestrador principal da execução ponta a ponta |
-| `test_silver.py` | Entrada individual para testes de carga da camada Silver |
-| `test_gold.py` | Entrada individual para testes de carga da camada Gold |
-| Ajustes nas queries | Adequações necessárias para compatibilizar o modelo de dados recebido com a execução real do pipeline |
+A etapa de extração é responsável pelo consumo da API da Câmara dos Deputados e geração das tabelas staging brutas.
 
-O modelo dimensional base foi recebido de outro engenheiro. Durante a implementação, foram necessários ajustes técnicos nas queries, chaves e grãos das tabelas para garantir execução íntegra, sem duplicidade e compatível com a estrutura real dos dados.
-
----
-
-## Estrutura principal do projeto
+Arquivo principal relacionado:
 
 ```text
-radar-legislativo/
-├── src/
-│   └── extract.py
-├── pipeline/
-│   ├── carga_bronze.py
-│   ├── carga_silver.py
-│   ├── carga_gold.py
-│   ├── creates_silver.py
-│   ├── creates_gold.py
-│   ├── queries_silver.py
-│   ├── queries_gold.py
-│   ├── leitura.py
-│   ├── inspecao.py
-│   ├── conversao.py
-│   ├── conversao_tipos.py
-│   ├── correcao_texto.py
-│   ├── deduplicacao.py
-│   ├── exportacao.py
-│   ├── drop_bronze.py
-│   └── mapeamento_bronze.py
-├── conexoes/
-│   ├── sqlalchemy_engine.py
-│   └── supabase_client.py
-├── output/
+src/extract.py
+```
+
+Essa etapa foi desenvolvida para consumir os dados externos e disponibilizá-los em tabelas staging, mantendo o dado em estado próximo ao bruto para posterior tratamento.
+
+---
+
+### 2.2 Tratamento em Memória
+
+Após a leitura das tabelas staging, o pipeline realiza tratamento em memória utilizando Pandas.
+
+Principais etapas:
+
+- leitura das tabelas staging;
+- inspeção de tipos;
+- conversão de tipos;
+- correção de acentuação;
+- remoção de duplicatas;
+- exportação opcional dos dados tratados em CSV.
+
+Arquivos principais:
+
+```text
+pipeline/leitura.py
+pipeline/inspecao.py
+pipeline/conversao.py
+pipeline/correcao_texto.py
+pipeline/deduplicacao.py
+pipeline/exportacao.py
+```
+
+---
+
+### 2.3 Bronze Física Transitória
+
+A camada Bronze passou a ser carregada fisicamente no Supabase/PostgreSQL, em vez de permanecer somente em memória.
+
+Essa alteração foi necessária para reduzir risco de timeout e melhorar a estabilidade do processamento, especialmente em tabelas com maior volume de registros.
+
+A estratégia adotada foi:
+
+1. tratar os dados staging em memória;
+2. carregar os DataFrames tratados para o schema `bronze`;
+3. usar a Bronze como fonte para a Silver;
+4. remover a Bronze ao final do pipeline.
+
+Arquivo principal:
+
+```text
+pipeline/carga_bronze.py
+```
+
+A Bronze é considerada **transitória**, ou seja, não é camada final de consumo.
+
+---
+
+### 2.4 Silver
+
+A camada Silver consolida dados tratados, padronizados e ajustados ao modelo relacional do projeto.
+
+Arquivo principal:
+
+```text
+pipeline/carga_silver.py
+pipeline/queries_silver.py
+```
+
+Exemplo de alteração importante realizada na camada Silver:
+
+- inclusão da coluna `codDespesa` na modelagem de despesas, necessária para aderência ao modelo de dados recebido de outro engenheiro.
+
+A Silver é a principal camada intermediária para consumo da Gold.
+
+---
+
+### 2.5 Gold
+
+A camada Gold organiza os dados em estruturas analíticas, como dimensões e fatos.
+
+Arquivos principais:
+
+```text
+pipeline/carga_gold.py
+pipeline/queries_gold.py
+```
+
+A camada Gold é voltada para consumo analítico, relatórios, dashboards e futuras integrações com modelos de IA.
+
+---
+
+## 3. Orquestrador Principal
+
+O arquivo `main.py` é o orquestrador ponta a ponta do pipeline.
+
+Responsabilidades principais:
+
+- conectar ao Supabase/PostgreSQL;
+- preparar o ambiente inicial;
+- tratar as tabelas staging;
+- carregar a Bronze física transitória;
+- carregar a Silver;
+- carregar a Gold;
+- remover a Bronze ao final;
+- registrar resumo da execução.
+
+Arquivo:
+
+```text
+main.py
+```
+
+Execução:
+
+```bash
+python main.py
+```
+
+---
+
+## 4. Estratégia de Refresh
+
+A estratégia principal do projeto é:
+
+```text
+FULL REFRESH
+```
+
+Ou seja, a cada execução o pipeline recria as camadas controladas pelo processo.
+
+Fluxo resumido:
+
+1. remover objetos controlados dos schemas `bronze`, `silver` e `gold`;
+2. recriar a Bronze física transitória;
+3. recriar tabelas Silver;
+4. recriar tabelas Gold;
+5. remover a Bronze ao final.
+
+---
+
+## 5. Atualização Recente — Preservação de Tabelas `_ia` na Silver
+
+Foi adicionada uma regra especial no `main.py` para preservar tabelas com sufixo `_ia` dentro do schema `silver`.
+
+Motivo da alteração:
+
+- a tabela `silver.proposicoes_ia` é criada em outra etapa do projeto;
+- essa etapa é mantida por outro engenheiro;
+- o pipeline principal não deve apagar essa tabela durante o refresh;
+- a Gold pode depender dessa tabela para enriquecimento analítico.
+
+Antes da alteração, o pipeline executava:
+
+```sql
+DROP SCHEMA IF EXISTS "silver" CASCADE;
+```
+
+Esse comando removia o schema inteiro, apagando também:
+
+```text
+silver.proposicoes_ia
+```
+
+Com a alteração, o schema `silver` passou a ser limpo seletivamente.
+
+Comportamento atual:
+
+| Schema | Comportamento |
+|---|---|
+| `bronze` | Drop completo do schema |
+| `silver` | Remove objetos do schema, mas preserva objetos terminados em `_ia` |
+| `gold` | Drop completo do schema |
+
+Configuração adicionada ao `main.py`:
+
+```python
+SCHEMAS_COM_TABELAS_IA_PRESERVADAS = {
+    "silver",
+}
+```
+
+A função `dropar_schema` agora trata o schema `silver` como exceção e chama uma rotina específica para preservar objetos com sufixo `_ia`.
+
+---
+
+## 6. Atualização Recente — Ajuste da Gold `dim_proposicao`
+
+Durante o teste individual da camada Gold, a tabela `gold.dim_proposicao` apresentou erro de `NOT NULL` na coluna:
+
+```text
+ds_tema_classificado
+```
+
+O erro ocorreu porque a carga faz `LEFT JOIN` com a tabela `silver.proposicoes_ia`.
+
+Como nem todas as proposições possuem enriquecimento de IA, algumas colunas retornavam `NULL`, causando falha no insert da Gold.
+
+Consulta original com risco de erro:
+
+```sql
+UPPER("tema_classificado") AS "ds_tema_classificado",
+"score_similaridade" AS "nr_score_similaridade",
+UPPER("resumo_executivo") AS "ds_resumo_executivo"
+```
+
+Correção recomendada:
+
+```sql
+COALESCE(
+    NULLIF(UPPER(TRIM(ia."tema_classificado")), ''),
+    'NÃO CLASSIFICADO'
+) AS "ds_tema_classificado",
+
+COALESCE(
+    ia."score_similaridade",
+    0
+) AS "nr_score_similaridade",
+
+COALESCE(
+    NULLIF(UPPER(TRIM(ia."resumo_executivo")), ''),
+    'SEM RESUMO EXECUTIVO GERADO'
+) AS "ds_resumo_executivo"
+```
+
+Com essa alteração, a Gold passa a aceitar proposições que ainda não foram processadas pela etapa de IA, mantendo valores padrão controlados.
+
+Valores padrão adotados:
+
+| Campo | Valor padrão |
+|---|---|
+| `ds_tema_classificado` | `NÃO CLASSIFICADO` |
+| `nr_score_similaridade` | `0` |
+| `ds_resumo_executivo` | `SEM RESUMO EXECUTIVO GERADO` |
+
+Recomendação: manter as colunas como `NOT NULL` na Gold, pois a dimensão analítica deve evitar campos nulos em atributos de classificação.
+
+---
+
+## 7. Testes Individuais
+
+Foram criados arquivos específicos para testes isolados das camadas Silver e Gold.
+
+Arquivos:
+
+```text
+test_silver.py
+test_gold.py
+```
+
+### 7.1 Teste da Silver
+
+Objetivo:
+
+- executar uma tabela Silver específica;
+- validar dependências da Bronze;
+- facilitar depuração sem rodar o pipeline completo.
+
+Execução:
+
+```bash
+python test_silver.py
+```
+
+---
+
+### 7.2 Teste da Gold
+
+Objetivo:
+
+- executar uma tabela Gold específica;
+- validar dependências da Silver;
+- testar dimensões ou fatos individualmente;
+- facilitar correções pontuais em `queries_gold.py`.
+
+Execução:
+
+```bash
+python test_gold.py
+```
+
+Exemplo recente validado:
+
+```text
+gold.dim_proposicao
+```
+
+Dependência principal:
+
+```text
+silver.proposicao
+```
+
+Dependência complementar de IA:
+
+```text
+silver.proposicoes_ia
+```
+
+---
+
+## 8. Principais Arquivos do Projeto
+
+```text
+.
 ├── main.py
 ├── test_silver.py
 ├── test_gold.py
 ├── config.py
 ├── logger.py
-├── requirements.txt
-└── .env.example
+├── conexoes/
+│   ├── sqlalchemy_engine.py
+│   └── supabase_client.py
+├── pipeline/
+│   ├── leitura.py
+│   ├── inspecao.py
+│   ├── conversao.py
+│   ├── correcao_texto.py
+│   ├── deduplicacao.py
+│   ├── exportacao.py
+│   ├── carga_bronze.py
+│   ├── carga_silver.py
+│   ├── carga_gold.py
+│   ├── drop_bronze.py
+│   ├── queries_silver.py
+│   └── queries_gold.py
+└── src/
+    └── extract.py
 ```
 
 ---
 
-## Camadas do pipeline
+## 9. Variáveis de Ambiente
 
-### 1. Extração — `src/extract.py`
-Engenheiro 1
+O projeto depende de configuração de conexão com o banco Supabase/PostgreSQL.
 
-### 2. Tratamento em memória — `pipeline/*`
-
-Após a extração, o pipeline lê as staging e executa tratamento em memória com Pandas.
-
-Arquivos principais:
-
-| Arquivo | Função |
-|---|---|
-| `pipeline/leitura.py` | Lê tabelas staging do banco para DataFrames Pandas |
-| `pipeline/inspecao.py` | Gera diagnóstico de tipos, nulos e cardinalidade |
-| `pipeline/conversao.py` | Aplica conversões de tipo por tabela |
-| `pipeline/conversao_tipos.py` | Centraliza o dicionário de tipos esperados |
-| `pipeline/correcao_texto.py` | Corrige acentuação, mojibake e padroniza texto em uppercase |
-| `pipeline/deduplicacao.py` | Remove duplicidades com chaves específicas por tabela |
-| `pipeline/exportacao.py` | Exporta CSVs tratados para a pasta `output/ajustadas` |
-
----
-
-### 3. Output tratado — `output/ajustadas`
-
-A etapa de output salva cópias CSV dos DataFrames tratados, permitindo inspeção externa, auditoria e comparação com as tabelas carregadas no banco.
-
-Formato de saída:
-
-```text
-<tabela>_ajustada_<YYYYMMDD_HHMMSS>.csv
-```
-
-Exemplo:
-
-```text
-stg_deputados_ajustada_20260613_145348.csv
-stg_despesas_ajustada_20260613_145348.csv
-stg_votacoes_ajustada_20260613_145348.csv
-```
-
----
-
-### 4. Bronze física transitória — `pipeline/carga_bronze.py`
-
-A Bronze é criada fisicamente no Supabase/PostgreSQL durante a execução e removida ao final.
-
-Objetivo:
-
-- Evitar uso excessivo de memória.
-- Reduzir timeout em cargas grandes.
-- Permitir que a Silver execute transformações diretamente no banco via SQL.
-- Isolar dados tratados antes da aplicação das regras de negócio.
-
-Principais características:
-
-- Criação do schema `bronze`.
-- Carga das tabelas via `COPY FROM STDIN`, usando método customizado no `pandas.to_sql`.
-- Recriação das tabelas Bronze a cada execução.
-- Remoção do schema Bronze no final por meio de `pipeline/drop_bronze.py`.
-
-Mapeamento aplicado no `main.py`:
-
-| Staging | Bronze |
-|---|---|
-| `stg_deputados_bruto` | `bronze.deputados` |
-| `stg_legislaturas_bruto` | `bronze.legislaturas` |
-| `stg_partidos_bruto` | `bronze.partidos` |
-| `stg_orgaos_bruto` | `bronze.orgaos` |
-| `stg_eventos_bruto` | `bronze.eventos` |
-| `stg_eventos_orgaos_bruto` | `bronze.eventos_orgaos` |
-| `stg_proposicoes_bruto` | `bronze.proposicoes` |
-| `stg_proposicoes_autores_bruto` | `bronze.proposicoes_autores` |
-| `stg_despesas_bruto` | `bronze.despesas` |
-| `stg_votos_bruto` | `bronze.votos` |
-| `stg_votacoes_bruto` | `bronze.votacoes` |
-
----
-
-### 5. Silver — `creates_silver.py`, `queries_silver.py`, `carga_silver.py`
-
-A camada Silver aplica regras de negócio, padronização, tratamento de nulos, extração de IDs e preparação das entidades analíticas intermediárias.
-
-Tabelas Silver:
-
-```text
-silver.deputado
-silver.orgao
-silver.evento
-silver.proposicao
-silver.votacao
-silver.despesa
-```
-
-A carga Silver utiliza a estratégia:
-
-```text
-DROP TABLE
-CREATE TABLE
-INSERT INTO ... SELECT ...
-```
-
-Essa decisão foi tomada para evitar resíduos de cargas anteriores e garantir que a estrutura física reflita sempre a versão atual do projeto.
-
-#### Principais ajustes realizados em Silver
-
-| Tabela | Ajuste realizado |
-|---|---|
-| `silver.deputado` | Join com `bronze.legislaturas` e `bronze.partidos` para enriquecer dados legislativos e identificar liderança partidária |
-| `silver.orgao` | Padronização de sigla, nome, apelido e tipo de órgão com defaults para valores nulos |
-| `silver.evento` | Join com `bronze.eventos_orgaos` para validar contexto de evento e órgão |
-| `silver.proposicao` | Uso de `SELECT DISTINCT` e extração de IDs a partir de URIs de autores e órgãos |
-| `silver.votacao` | Ajuste de tipos para `bigint`, correção da coluna `deputado_.id`, casts defensivos com regex e fallback para `-1` ou `-3` |
-| `silver.despesa` | Inclusão da coluna `codDespesa`, derivada de `codDocumento`, para preservar o grão da despesa e evitar duplicidade na fato Gold |
-
-O ajuste em `silver.despesa` foi essencial para corrigir a granularidade da despesa. Sem `codDespesa`, a fato `gold.ft_despesa` ficava dependente apenas de deputado, data e tipo de despesa, o que causava colisão de chave primária quando havia mais de uma despesa do mesmo tipo no mesmo dia.
-
----
-
-### 6. Gold dimensional — `creates_gold.py`, `queries_gold.py`, `carga_gold.py`
-
-A camada Gold representa o modelo dimensional final do projeto, organizado em dimensões e fatos.
-
-Dimensões:
-
-```text
-gold.dim_deputado
-gold.dim_orgao
-gold.dim_evento
-gold.dim_proposicao
-gold.dim_votacao
-```
-
-Fatos:
-
-```text
-gold.ft_proposicao
-gold.ft_voto
-gold.ft_despesa
-```
-
-A carga Gold também utiliza:
-
-```text
-DROP TABLE
-CREATE TABLE
-INSERT INTO ... SELECT ...
-```
-
-#### Registros técnicos de dimensão
-
-As dimensões Gold são criadas com chaves substitutas `sk_*` e recebem registros técnicos iniciais:
-
-| SK | Significado |
-|---:|---|
-| `-1` | Não informado |
-| `-3` | Não se aplica |
-
-Esses registros são inseridos diretamente no DDL de `creates_gold.py`, antes da carga dos dados de negócio.
-
-#### Ajustes importantes em Gold
-
-| Tabela | Ajuste realizado |
-|---|---|
-| `dim_deputado` | Correção do atributo `nm_deputado` e criação de surrogate key `sk_deputado` |
-| `dim_orgao` | Criação de `sk_orgao` e registros técnicos `-1` e `-3` |
-| `dim_evento` | Criação de `sk_evento` e padronização de situação/tipo |
-| `dim_proposicao` | Criação de `sk_proposicao` e status da proposição |
-| `dim_votacao` | Uso de `bigint` para `id_votacao` devido ao tamanho dos identificadores de votação |
-| `ft_proposicao` | Construção com SKs de deputado, órgão, proposição e data da proposição |
-| `ft_voto` | Construção com SKs de votação, deputado, órgão, evento, proposição e data do voto |
-| `ft_despesa` | Inclusão de `sk_cod_despesa` na chave primária para respeitar o grão real da despesa |
-
-A fato `ft_despesa` ficou no seguinte grão:
-
-```text
-sk_deputado + sk_data_despesa + sk_cod_despesa + tp_despesa
-```
-
-Esse ajuste evita duplicidade quando um deputado possui mais de uma despesa no mesmo dia e do mesmo tipo.
-
----
-
-## Orquestrador principal — `main.py`
-
-O arquivo `main.py` é o corpo principal do pipeline ponta a ponta.
-
-Responsabilidades:
-
-1. Conectar ao Supabase e ao PostgreSQL via SQLAlchemy.
-2. Preparar o ambiente em estratégia FULL REFRESH.
-3. Remover schemas `bronze`, `silver` e `gold` no início da execução.
-4. Ler tabelas staging.
-5. Aplicar inspeção, conversão, correção textual e deduplicação.
-6. Exportar CSVs tratados.
-7. Criar e carregar Bronze física transitória.
-8. Criar e carregar Silver.
-9. Criar e carregar Gold.
-10. Remover Bronze ao final da execução.
-11. Registrar resumo final no log.
-
-Fluxo resumido:
-
-```text
-preparar_ambiente_inicial()
-preparar_tabelas_bronze()
-carregar_bronze()
-carregar_silver()
-carregar_gold()
-drop_bronze()
-```
-
----
-
-## Testes individuais
-
-### Teste Silver — `test_silver.py`
-
-Permite testar uma tabela Silver isoladamente sem rodar a pipeline completa.
-
-Características:
-
-- Escolha da tabela por meio de `TABELA_TESTE`.
-- Mapeamento das dependências Bronze necessárias por tabela Silver.
-- Criação de Bronze física somente para as tabelas necessárias.
-- Validação de existência da tabela em `CREATES_SILVER` e `QUERIES_SILVER`.
-- Execução de `carregar_silver(engine, nome_tabela=TABELA_TESTE)`.
-
-Exemplo:
-
-```python
-TABELA_TESTE = "despesa"
-```
-
-Execução:
-
-```bash
-uv run test_silver.py
-```
-
----
-
-### Teste Gold — `test_gold.py`
-
-Permite testar uma dimensão ou fato Gold isoladamente.
-
-Características:
-
-- Escolha da tabela por meio de `TABELA_TESTE`.
-- Validação das dependências Silver antes da execução.
-- Para fatos, carrega automaticamente as dimensões Gold necessárias antes da fato.
-- Validação de existência e quantidade de registros após a carga.
-
-Exemplo:
-
-```python
-TABELA_TESTE = "ft_despesa"
-```
-
-Execução:
-
-```bash
-uv run test_gold.py
-```
-
-Ordem de execução aplicada para fatos:
-
-| Fato | Ordem de carga no teste |
-|---|---|
-| `ft_despesa` | `dim_deputado -> ft_despesa` |
-| `ft_proposicao` | `dim_deputado -> dim_orgao -> dim_proposicao -> ft_proposicao` |
-| `ft_voto` | `dim_votacao -> dim_deputado -> dim_orgao -> dim_evento -> dim_proposicao -> ft_voto` |
-
----
-
-## Como executar
-
-### 1. Instalar dependências
-
-```bash
-pip install -r requirements.txt
-```
-
-ou, usando `uv`:
-
-```bash
-uv pip install -r requirements.txt
-```
-
-> Observação: como o projeto utiliza `supabase-py` em `conexoes/supabase_client.py`, garanta que o pacote `supabase` esteja instalado no ambiente caso ele não esteja listado no `requirements.txt` local.
-
-### 2. Configurar variáveis de ambiente
-
-Crie um arquivo `.env` na raiz do projeto.
-
-Exemplo recomendado:
+Exemplo esperado no `.env`:
 
 ```env
-DB_URL=https://<projeto>.supabase.co
-DB_KEY=<sua-chave-anon-ou-service-role>
-DB_URI_DDL=postgresql+psycopg2://user:password@host:5432/dbname
-SUPABASE_DB_URL=postgresql+psycopg2://user:password@host:5432/dbname
+SUPABASE_URL=...
+SUPABASE_KEY=...
+DB_URI_DDL=postgresql+psycopg2://usuario:senha@host:porta/database
 ```
 
-Variáveis usadas:
+A variável mais crítica para execução das cargas via SQLAlchemy é:
 
-| Variável | Uso |
-|---|---|
-| `DB_URL` | URL do projeto Supabase usada pelo client Supabase |
-| `DB_KEY` | Chave de autenticação Supabase |
-| `DB_URI_DDL` | Conexão SQLAlchemy direta para DDL e cargas SQL |
-| `SUPABASE_DB_URL` | Conexão usada pela etapa `src/extract.py` |
+```text
+DB_URI_DDL
+```
 
-### 3. Executar extração da API
+Ela deve permitir operações DDL e DML, como:
+
+- `CREATE SCHEMA`;
+- `DROP SCHEMA`;
+- `CREATE TABLE`;
+- `DROP TABLE`;
+- `INSERT INTO`;
+- `COPY` ou carga equivalente.
+
+---
+
+## 10. Ordem Recomendada de Execução
+
+### 10.1 Execução completa
 
 ```bash
-uv run src/extract.py
+python main.py
 ```
 
-Essa etapa carrega/atualiza as tabelas staging `stg_*_bruto`.
-
-### 4. Executar pipeline ponta a ponta
+### 10.2 Testar apenas Silver
 
 ```bash
-uv run main.py
+python test_silver.py
 ```
 
-A execução ponta a ponta aplica:
+### 10.3 Testar apenas Gold
+
+```bash
+python test_gold.py
+```
+
+---
+
+## 11. Boas Práticas Adotadas
+
+- Separação clara entre camadas Staging, Bronze, Silver e Gold.
+- Bronze física transitória para reduzir timeout e melhorar controle de carga.
+- Uso de orquestrador único para execução ponta a ponta.
+- Testes individuais para Silver e Gold.
+- Mapeamento explícito entre staging e Bronze.
+- Preservação de tabelas `_ia` criadas fora do pipeline principal.
+- Uso de valores padrão controlados para evitar nulos em dimensões analíticas.
+- Logs detalhados para auditoria e depuração.
+
+---
+
+## 12. Histórico de Alterações Relevantes
+
+### 12.1 Bronze Física Transitória
+
+Alteração realizada para evitar problemas de timeout no Supabase/PostgreSQL.
+
+Antes:
 
 ```text
-FULL REFRESH
--> Bronze transitória
--> Silver
--> Gold
--> Drop Bronze
+Staging tratada em memória → múltiplas cargas intermediárias
 ```
 
----
-
-## Estratégia de carga
-
-### Bronze
-
-- Física e transitória.
-- Criada durante a execução.
-- Carregada via `COPY FROM STDIN`.
-- Removida ao final.
-
-### Silver
-
-- Full refresh.
-- Remove e recria as tabelas.
-- Consome exclusivamente `bronze.*`.
-- Aplica regras intermediárias e tratamento de campos.
-
-### Gold
-
-- Full refresh.
-- Remove e recria dimensões e fatos.
-- Consome exclusivamente `silver.*`.
-- Preserva registros técnicos de dimensão.
-- Gera modelo dimensional final.
-
----
-
-## Modelo Gold final
+Depois:
 
 ```text
-gold.dim_deputado
-gold.dim_orgao
-gold.dim_evento
-gold.dim_proposicao
-gold.dim_votacao
-
-gold.ft_proposicao
-gold.ft_voto
-gold.ft_despesa
+Staging tratada → Bronze física transitória → Silver → Gold → Drop Bronze
 ```
 
-Relacionamento lógico:
+---
+
+### 12.2 Preservação da Tabela `silver.proposicoes_ia`
+
+Alteração realizada no `main.py` para impedir que a tabela de IA seja apagada durante o refresh da Silver.
+
+Regra atual:
 
 ```text
-Silver
-  -> Dimensões Gold
-      -> Fatos Gold
+Todo objeto terminado em _ia no schema silver deve ser preservado.
 ```
 
-As tabelas fato usam surrogate keys das dimensões, evitando exposição direta dos IDs naturais da origem na camada analítica final.
-
----
-
-## Principais problemas resolvidos durante o projeto
-
-| Problema | Solução implementada |
-|---|---|
-| Timeout em cargas grandes | Criação de Bronze física transitória com `COPY FROM STDIN` |
-| Dependência de DataFrames em memória | Silver passou a consumir tabelas Bronze físicas no banco |
-| Tabelas antigas contaminando novas execuções | Estratégia `DROP + CREATE + INSERT` em Silver e Gold |
-| Perda de registros técnicos de dimensão | Registros `-1` e `-3` inseridos no DDL das dimensões Gold |
-| Nome físico incorreto entre staging e Bronze | Mapeamento explícito `stg_*_bruto -> bronze.<nome>` |
-| Erro de coluna em votação | Correção de `deputado__id` para `deputado_.id` |
-| Identificadores grandes em votação | Ajuste de casts para `bigint` e validação com regex |
-| Duplicidade na fato despesa | Inclusão de `codDespesa` na Silver e `sk_cod_despesa` na Gold |
-| Texto inconsistente | Correção de mojibake, normalização Unicode e uppercase |
-| Testes difíceis de isolar | Criação de `test_silver.py` e `test_gold.py` com dependências controladas |
-
----
-
-## Observações de manutenção
-
-- A ordem dos dicionários `QUERIES_GOLD` e `CREATES_GOLD` é relevante: dimensões devem ser criadas/carregadas antes das fatos.
-- A Bronze é transitória; não deve ser tratada como camada histórica.
-- A Silver e a Gold são recriadas em full refresh.
-- Para evoluir para carga incremental, será necessário implementar chaves únicas e lógica de `UPSERT`, `MERGE` ou `ON CONFLICT` por tabela.
-- Ao adicionar uma nova tabela, revise simultaneamente:
-  - `config.py`
-  - `main.py`, no mapeamento Bronze
-  - `pipeline/conversao_tipos.py`
-  - `pipeline/creates_silver.py`
-  - `pipeline/queries_silver.py`
-  - `pipeline/creates_gold.py`, se aplicável
-  - `pipeline/queries_gold.py`, se aplicável
-  - `test_silver.py` ou `test_gold.py`, se aplicável
-
----
-
-## Status final
-
-Projeto de ingestão finalizado com sucesso.
-
-Camadas estabilizadas:
+Exemplo preservado:
 
 ```text
-Extract/API -> Staging -> Tratamento -> Bronze -> Silver -> Gold
+silver.proposicoes_ia
 ```
 
-Entregas concluídas:
+---
 
-- Pipeline de tratamento após consumo da API.
-- Output de bases ajustadas em CSV.
-- Orquestrador principal `main.py`.
-- Carga Bronze física transitória.
-- Carga Silver full refresh.
-- Carga Gold dimensional full refresh.
-- Testes individuais Silver e Gold.
-- Ajustes de queries e grão das tabelas finais.
-- Padronização textual em uppercase.
+### 12.3 Ajuste da `gold.dim_proposicao`
+
+Alteração recomendada em `queries_gold.py` para tratar ausência de classificação por IA.
+
+Problema corrigido:
+
+```text
+psycopg2.errors.NotNullViolation: null value in column "ds_tema_classificado"
+```
+
+Solução:
+
+```text
+Aplicar COALESCE nas colunas vindas de silver.proposicoes_ia.
+```
+
+---
+
+## 13. Responsabilidades Desenvolvidas Nesta Etapa
+
+As etapas integralmente desenvolvidas nesta fase foram:
+
+- pipeline após consumo da API realizado na `extract.py` da pasta `src`;
+- geração de output com dados tratados após consumo das tabelas staging da API;
+- orquestrador principal `main.py`;
+- criação e ajuste dos testes individuais `test_silver.py` e `test_gold.py`;
+- ajustes para estabilidade do pipeline com Bronze física transitória;
+- ajuste do `main.py` para preservação de tabelas `_ia` no schema Silver;
+- ajuste recomendado para a Gold consumir dados de IA sem quebrar em registros ainda não classificados.
+
+Alterações relacionadas ao modelo de dados recebido de outro engenheiro foram incorporadas conforme necessidade do pipeline, como a inclusão de colunas específicas na Silver e o consumo da tabela `silver.proposicoes_ia` na Gold.
+
+---
+
+## 14. Status Atual
+
+```text
+Etapa de ingestão de dados do projeto: finalizada.
+Pipeline principal: funcional com Bronze transitória.
+Silver: carregada a partir da Bronze.
+Gold: em validação incremental por tabela.
+Integração com IA: preservada por regra no schema Silver.
+```
+
+---
+
+## 15. Próximos Pontos de Atenção
+
+- Validar se todas as queries da Gold tratam corretamente valores nulos vindos de tabelas complementares.
+- Revisar se outras tabelas analíticas externas também devem seguir o padrão `_ia`.
+- Garantir que `silver.proposicoes_ia` possua chave compatível com `silver.proposicao`.
+- Validar duplicidade em joins da Gold caso a tabela de IA tenha mais de um registro por proposição.
+- Avaliar criação de constraints ou índices na tabela `silver.proposicoes_ia`, especialmente sobre `proposicao_id`.
+
+---
+
+## 16. Observação Final
+
+Este README documenta a fase atual do projeto Radar Legislativo, com foco na consolidação do pipeline de ingestão, tratamento, carga Bronze/Silver/Gold e integração com a tabela complementar de IA.
+
+A principal decisão arquitetural recente foi preservar objetos `_ia` no schema Silver, permitindo que o pipeline principal continue em estratégia de `FULL REFRESH` sem apagar entregas mantidas por etapas externas do projeto.
