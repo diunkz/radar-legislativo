@@ -10,11 +10,11 @@ O workflow `n8n/wf_radar_legislativo_top_proposicoes_semanais.json` executa sema
 6. Monta o e-mail em HTML com os dados retornados
 7. Envia a mensagem para os destinatários configurados no Gmail
 
-### Documentação
+## Documentação
 Em `automation/docs/`:
 
 - `n8n_workflow.png`  
-  Print do workflow no N8N.
+  Print do workflow no n8n.
 
 - `dc01_coleta_proposicoes_n8n.sql`
   Query SQL utilizada para buscar os dados das proposições mais relevantes.
@@ -22,7 +22,7 @@ Em `automation/docs/`:
 - `dc01_formata_email_n8n.html`
   Código html utilizado para formatar o e-mail.
 
-### Como executar
+## Como executar
 
 1. Abra o n8n
 2. Clique em `Import from file`
