@@ -1,6 +1,6 @@
 # Automação com n8n
 
-O workflow `n8n/wf_radar_legislativo_top_proposicoes_semanais.json` executa semanalmente às **06h** e envia por e-mail as **top 5 proposições mais relevantes** consultando diretamente a camada **gold**.
+O workflow `05_automation/wf_radar_legislativo_top_proposicoes_semanais.json` executa semanalmente às **06h** e envia por e-mail as **top 5 proposições mais relevantes** consultando diretamente a camada **gold**.
 
 1. Consulta a tabela `gold.ft_proposicao` junto com `gold.dim_proposicao` e `gold.dim_deputado`
 2. Filtra proposições dos tipos `PL`, `PEC` e `PLP`
@@ -11,7 +11,7 @@ O workflow `n8n/wf_radar_legislativo_top_proposicoes_semanais.json` executa sema
 7. Envia a mensagem para os destinatários configurados no Gmail
 
 ## Documentação
-Em `automation/docs/`:
+Em `05_automation/docs/`:
 
 - `n8n_workflow.png`  
   Print do workflow no n8n.
@@ -26,7 +26,7 @@ Em `automation/docs/`:
 
 1. Abra o n8n
 2. Clique em `Import from file`
-3. Selecione o arquivo `n8n/wf_radar_legislativo_top_proposicoes_semanais.json`
+3. Selecione o arquivo `05_automation/wf_radar_legislativo_top_proposicoes_semanais.json`
 4. Configure as credenciais de Postgres e Gmail
 5. Revise a query SQL, se necessário
 6. Ative o workflow
