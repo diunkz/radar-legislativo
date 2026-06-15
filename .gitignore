@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# =====================================================================
+# Configurações do Projeto Integrador - Bússola Pública
+# =====================================================================
+# Ignorar os dados brutos de despesas/proposições baixados localmente
+data/
+dados_brutos/
+# Ignorar arquivos de logs
+logs/
