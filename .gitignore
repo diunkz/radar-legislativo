@@ -227,3 +227,4 @@ dados_brutos/
 logs/ 
 # Ignorar o arquivo .DS_STORE
 .DS_STORE
+**/.DS_Store
