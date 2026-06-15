@@ -224,4 +224,6 @@ __marimo__/
 data/
 dados_brutos/
 # Ignorar arquivos de logs
-logs/
+logs/ 
+# Ignorar o arquivo .DS_STORE
+.DS_STORE
