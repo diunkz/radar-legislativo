@@ -13,9 +13,9 @@ API Dados Abertos — Câmara dos Deputados
         ↓
 01_ingestion — Extração e Staging
         ↓
-03_processing — Tratamento, Bronze, Silver e Gold
-        ↓
 02_data_model — Modelo relacional e dimensional
+        ↓
+03_processing — Tratamento, Bronze, Silver e Gold
         ↓
 04_ai_features — Classificação, embeddings e resumos por IA
         ↓
