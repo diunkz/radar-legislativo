@@ -1,0 +1,174 @@
+{
+  "name": "Radar Legislativo - Top Proposições Semanais",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    dp.id_proposicao,\n    dp.sg_tipo_proposicao,\n    dp.ds_tipo_proposicao,\n    dp.ds_situacao,\n    dp.ds_tema_classificado,\n    ROUND(CAST(dp.nr_score_similaridade * 100 AS numeric), 1) AS score_pct,\n    dp.ds_resumo_executivo,\n    TO_DATE(fp.sk_data_proposicao::TEXT, 'YYYYMMDD') AS dt_apresentacao,\n    ddep.nm_deputado,\n    ddep.sg_partido,\n    ddep.sg_uf,\n    fp.qtd_proposicao,\n    dp.dh_ingestao\nFROM gold.ft_proposicao fp\nJOIN gold.dim_proposicao dp\n  ON fp.sk_proposicao = dp.sk_proposicao\nJOIN gold.dim_deputado ddep\n  ON fp.sk_deputado = ddep.sk_deputado\n WHERE\n       TO_DATE(fp.sk_data_proposicao::TEXT, 'YYYYMMDD') >= CURRENT_DATE - INTERVAL '23 days'\n   AND TO_DATE(fp.sk_data_proposicao::TEXT, 'YYYYMMDD') <  CURRENT_DATE - INTERVAL '16 days'\n   AND dp.sg_tipo_proposicao IN ('PL', 'PEC', 'PLP')\n   AND dp.ds_tema_classificado <> 'NÃO CLASSIFICADO' \n ORDER BY\n     dp.nr_score_similaridade DESC,\n     TO_DATE(fp.sk_data_proposicao::TEXT, 'YYYYMMDD') DESC\n LIMIT 5;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -256,
+        -112
+      ],
+      "id": "14283953-0f48-4118-9672-5c8a070e7595",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "TcauV33LwP2Zkfb0",
+          "name": "DataFlow"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "proposicoes",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -112
+      ],
+      "id": "32cc7c4e-43d7-4e39-84d0-437e5addecc2",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "html": "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <style>\n    body {\n      font-family: Arial, sans-serif;\n      background-color: #f4f4f4;\n      margin: 0;\n      padding: 20px;\n    }\n    .container {\n      max-width: 680px;\n      margin: 0 auto;\n      background-color: #ffffff;\n      border-radius: 8px;\n      overflow: hidden;\n      box-shadow: 0 2px 8px rgba(0,0,0,0.1);\n    }\n    .header {\n      background-color: #1a3a5c;\n      padding: 24px 32px;\n      color: #ffffff;\n    }\n    .header h1 {\n      margin: 0;\n      font-size: 20px;\n    }\n    .header p {\n      margin: 6px 0 0;\n      font-size: 13px;\n      opacity: 0.8;\n    }\n    .card {\n      border-left: 4px solid #1a3a5c;\n      margin: 20px 32px;\n      padding: 16px 20px;\n      background-color: #f9f9f9;\n      border-radius: 4px;\n    }\n    .card-title {\n      font-size: 15px;\n      font-weight: bold;\n      color: #1a3a5c;\n      margin: 0 0 8px;\n    }\n    .badge {\n      display: inline-block;\n      background-color: #e8f0fe;\n      color: #1a3a5c;\n      font-size: 11px;\n      padding: 2px 8px;\n      border-radius: 12px;\n      margin-bottom: 8px;\n    }\n    .score {\n      display: inline-block;\n      background-color: #e6f4ea;\n      color: #2e7d32;\n      font-size: 11px;\n      padding: 2px 8px;\n      border-radius: 12px;\n      margin-left: 6px;\n      margin-bottom: 8px;\n    }\n    .meta {\n      font-size: 12px;\n      color: #666;\n      margin: 6px 0;\n    }\n    .resumo {\n      font-size: 13px;\n      color: #333;\n      margin-top: 10px;\n      line-height: 1.5;\n    }\n    .footer {\n      text-align: center;\n      padding: 20px 32px;\n      font-size: 11px;\n      color: #999;\n      border-top: 1px solid #eee;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n\n    <div class=\"header\">\n      <h1>Radar Legislativo</h1>\n      <p>Top proposições da semana · Classificadas por IA · {{ $now.toFormat('dd/MM/yyyy') }}</p>\n    </div>\n\n    {{ $json.proposicoes.map((p, i) => `\n    <div class=\"card\">\n      <div class=\"card-title\">${i + 1}. ${p.sg_tipo_proposicao} ${p.id_proposicao}</div>\n      <span class=\"badge\">${p.ds_tema_classificado}</span>\n      <span class=\"score\">Confiança IA: ${p.score_pct}%</span>\n      <div class=\"meta\"><strong>Autor:</strong> ${p.nm_deputado} (${p.sg_partido}/${p.sg_uf})</div>\n      <div class=\"meta\"><strong>Situação:</strong> ${p.ds_situacao}</div>\n      <div class=\"meta\"><strong>Apresentada em:</strong> ${new Date(p.dt_apresentacao).toLocaleDateString('pt-BR')}</div>\n      <div class=\"resumo\">${p.ds_resumo_executivo}</div>\n    </div>\n    `).join('') }}\n\n    <div class=\"footer\">\n      Este relatório foi gerado automaticamente pelo pipeline do Radar Legislativo.<br/>\n      Bússola Pública · Inteligência Legislativa\n    </div>\n\n  </div>\n</body>\n</html>"
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        -112
+      ],
+      "id": "eea52995-b215-4d86-8925-0a6645071bf2",
+      "name": "HTML"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "daysInterval": 7,
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -464,
+        -112
+      ],
+      "id": "06895d59-1526-4afe-8c31-b8136a9c5d67",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "paula.m2081@gmail.com, rodrigo.rmoraes@outlook.com, noahdiunkz@gmail.com, disvaladares@gmail.com",
+        "subject": "=Radar Legislativo — Top proposições da semana ({{ $now.toFormat('dd/MM/yyyy') }})",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        384,
+        -112
+      ],
+      "id": "9251c601-5f6a-4896-b99e-fab8235aeb25",
+      "name": "Send a message",
+      "webhookId": "7f45799f-1431-4e64-90f6-3f7c060eaba5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "S3vSDT19lGiGs8Bl",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Top Proposições Semanais",
+        "height": 256,
+        "width": 1152,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        -176
+      ],
+      "id": "a803c635-a050-4373-b432-1b6fbce68991",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c2d88242-9eee-45cf-970d-fefe98a2dca0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b3a7439b8b600b72113ef13a5427a6f4134e2a08ddf95e9f61bc45c4d2f4470d"
+  },
+  "nodeGroups": [],
+  "id": "uqXjESOXFxUgGKg7",
+  "tags": []
+}
